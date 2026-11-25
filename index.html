@@ -2,300 +2,1016 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#d9541e">
-<title>Rabbit Hole compatibility test</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6f1ea" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#16120f" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Rabbit Hole">
+<meta name="description" content="True stories from Wikipedia, found where your interests overlap.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<title>Rabbit Hole</title>
 <style>
-  :root { color-scheme: light dark; --bg: #faf7f2; --card: #fff; --ink: #1d1a16; --muted: #6b645a; --line: #e6dfd4;
-          --accent: #d9541e; --ok: #1f8a4c; --bad: #c0362c; --warn: #b7791f; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #15120f; --card: #1f1b17; --ink: #f2ede6; --muted: #a59d92; --line: #342e27; }
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f1ea; --card: #fffdf9; --ink: #1f1a15; --muted: #6f665b; --line: #e7ddcf;
+    --accent: #d4531f; --accent-ink: #fff; --accent-soft: #fbe6da; --ok: #237a48; --bad: #b8322a;
+    --hole: #2a1d14;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --serif: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
   }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink);
-         font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 560px; margin: 0 auto; padding: 24px 16px 48px; }
-  h1 { font-size: 26px; line-height: 1.15; margin: 0 0 6px; }
-  .sub { color: var(--muted); margin: 0 0 20px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
-  label { display: block; font-weight: 600; margin-bottom: 6px; }
-  input[type=password] { width: 100%; font-size: 16px; padding: 12px; border-radius: 10px;
-                         border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
-  .hint { font-size: 14px; color: var(--muted); margin: 8px 0 0; }
-  .hint a { color: var(--accent); }
-  button { font: inherit; font-weight: 600; border: 0; border-radius: 12px; padding: 14px 16px; min-height: 48px;
-           width: 100%; cursor: pointer; }
-  .primary { background: var(--accent); color: #fff; margin-top: 14px; }
-  .primary:disabled { opacity: .6; }
-  .secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); margin-top: 10px; }
-  #verdict { display: none; font-size: 18px; font-weight: 600; }
-  #verdict.ok { display: block; border-color: var(--ok); color: var(--ok); }
-  #verdict.bad { display: block; border-color: var(--bad); color: var(--bad); }
-  #verdict.warn { display: block; border-color: var(--warn); color: var(--warn); }
-  #verdict p { font-size: 15px; font-weight: 400; color: var(--ink); margin: 8px 0 0; }
-  .row { display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
-  .row:first-child { border-top: 0; padding-top: 0; }
-  .icon { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
-          font-size: 14px; font-weight: 700; color: #fff; background: var(--line); }
-  .icon.ok { background: var(--ok); } .icon.bad { background: var(--bad); } .icon.warn { background: var(--warn); }
-  .icon.run { background: var(--muted); }
-  .name { font-weight: 600; }
-  .detail { font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
-  .preview { display: none; margin-top: 10px; gap: 12px; align-items: center; }
-  .preview img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; background: var(--line); }
-  .preview.show { display: flex; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16120f; --card: #201b17; --ink: #f3ede5; --muted: #a99f93; --line: #382f27;
+            --accent: #ee7a45; --accent-ink: #1b0f08; --accent-soft: #3a2418; --hole: #0d0906; }
+  }
+  * { box-sizing: border-box; min-width: 0; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--sans);
+         padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  main { max-width: 640px; margin: 0 auto; padding: 12px 16px 56px; }
+  a { color: var(--accent); }
+  h1, h2, h3 { line-height: 1.15; margin: 0; }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+
+  .topbar { display: flex; align-items: center; gap: 10px; padding: 8px 0 16px; }
+  .topbar h1 { font-size: 22px; flex: 1; }
+  .logo { width: 34px; height: 34px; border-radius: 9px; flex: none; border: 1px solid var(--line); }
+  .iconbtn { width: 44px; height: 44px; border-radius: 12px; border: 0; background: transparent; display: grid;
+             place-items: center; color: var(--ink); }
+  .iconbtn svg { width: 24px; height: 24px; }
+  .back { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; color: var(--accent);
+          font-weight: 600; padding: 10px 4px; min-height: 44px; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 18px; margin-bottom: 14px; }
+  .card h2 { font-size: 20px; margin-bottom: 6px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 14px; }
+  .btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 50px;
+         border-radius: 14px; border: 0; padding: 12px 16px; font-weight: 600; text-decoration: none; }
+  .btn svg { width: 20px; height: 20px; }
+  .btn-primary { background: var(--accent); color: var(--accent-ink); }
+  .btn-soft { background: var(--accent-soft); color: var(--accent); }
+  .btn-line { background: transparent; border: 1px solid var(--line); color: var(--ink); }
+  .btn-danger { background: transparent; border: 1px solid var(--bad); color: var(--bad); }
+  .btn:disabled { opacity: .55; }
+  .stack > * + * { margin-top: 10px; }
+  .row2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px; }
+
+  .hero { position: relative; overflow: hidden; }
+  .hero-art { position: absolute; right: 14px; top: 12px; width: 96px; height: 129px; pointer-events: none; }
+  .hero h2 { font-size: 24px; max-width: 70%; }
+  .hero p { max-width: 75%; margin: 6px 0 16px; }
+
+  .job { display: flex; align-items: center; gap: 12px; padding: 4px 0 12px; }
+  .spinner { width: 22px; height: 22px; border-radius: 50%; border: 3px solid var(--accent-soft); border-top-color: var(--accent);
+             animation: spin .9s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+  .error { background: color-mix(in srgb, var(--bad) 10%, transparent); color: var(--bad); border-radius: 12px;
+           padding: 10px 12px; font-size: 14px; margin-top: 12px; }
+  .notice { background: var(--accent-soft); border-radius: 12px; padding: 12px; font-size: 14px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 6px 12px; font-size: 14px;
+          font-weight: 600; border: 0; display: inline-flex; align-items: center; gap: 6px; }
+  .chip.toggle { background: transparent; color: var(--ink); border: 1px solid var(--line); min-height: 38px; padding: 7px 14px; }
+  .chip.toggle[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .chip-group { display: inline-flex; align-items: stretch; }
+  .chip-group .chip.toggle { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+  .chip-x { border: 1px solid var(--line); border-left: 0; background: transparent; color: var(--muted); border-radius: 0 999px 999px 0;
+            padding: 0 12px; font-size: 18px; min-height: 38px; }
+  .connects { display: flex; flex-wrap: wrap; gap: 6px; margin: 18px 0 8px; }
+  .connects span { background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 700; border-radius: 999px; padding: 4px 10px; }
+
+  .section-title { display: flex; align-items: baseline; justify-content: space-between; margin: 22px 2px 10px; }
+  .section-title h3 { font-size: 17px; }
+  .linkbtn { border: 0; background: none; color: var(--accent); font-weight: 600; padding: 6px; min-height: 40px; }
+
+  .reads { list-style: none; margin: 0; padding: 0; }
+  .read-item { display: flex; gap: 12px; align-items: center; padding: 10px; border-radius: 14px; text-decoration: none;
+               color: inherit; background: var(--card); border: 1px solid var(--line); margin-bottom: 10px; }
+  .thumb { width: 64px; height: 64px; border-radius: 12px; object-fit: cover; flex: none; background: var(--accent-soft); }
+  .thumb.blank { display: grid; place-items: center; color: var(--accent); }
+  .read-item .t { font-weight: 600; line-height: 1.25; display: flex; gap: 6px; align-items: baseline; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; transform: translateY(-1px); }
+  .read-item .s { font-size: 14px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .empty { text-align: center; padding: 26px 12px; color: var(--muted); }
+
+  /* Reader */
+  .article-img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 18px; background: var(--accent-soft); display: block; }
+  .article h1 { font-size: clamp(30px, 8vw, 40px); line-height: 1.08; text-wrap: balance; }
+  .teaser { font-size: 19px; color: var(--muted); margin: 10px 0 0; line-height: 1.4; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; color: var(--muted); margin: 14px 0 6px; }
+  .prose p { font: 18px/1.65 var(--serif); margin: 0 0 1em; }
+  .prose h2 { font-size: 22px; margin: 1.6em 0 .6em; }
+  .prose p.takeaway { font-style: italic; }
+  .deeper .btn { justify-content: flex-start; text-align: left; }
+  .attrib { font-size: 13px; color: var(--muted); margin-top: 18px; }
+  .note { font-size: 13px; color: var(--muted); }
+
+  /* Settings */
+  label.lbl { display: block; font-weight: 600; margin-bottom: 6px; }
+  input[type=text], input[type=password], select { width: 100%; font-size: 16px; padding: 12px 14px; border-radius: 12px;
+         border: 1px solid var(--line); background: var(--bg); min-height: 48px; }
+  .inline { display: flex; gap: 8px; }
+  .inline > input { flex: 1; }
+  .inline > .btn { width: auto; flex: none; }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: var(--bg); padding: 4px; border-radius: 14px; border: 1px solid var(--line); }
+  .seg button { border: 0; border-radius: 10px; padding: 10px; min-height: 44px; background: transparent; font-weight: 600; }
+  .seg button[aria-pressed=true] { background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,.12); color: var(--accent); }
+  .result-ok { color: var(--ok); font-size: 14px; margin-top: 8px; }
+  .result-bad { color: var(--bad); font-size: 14px; margin-top: 8px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 </style>
 </head>
 <body>
-<main>
-  <h1>Rabbit Hole compatibility test</h1>
-  <p class="sub">Checks that everything the web app needs works on this phone. It takes about 30 seconds.</p>
-
-  <div class="card">
-    <label for="key">Your Gemini API key</label>
-    <input id="key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste key here">
-    <p class="hint">Get one free at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. The key stays on this page and is only sent to Google. It isn't saved anywhere.</p>
-    <button class="primary" id="run">Run the test</button>
-  </div>
-
-  <div class="card" id="verdict"></div>
-
-  <div class="card" id="results">
-    <div class="row" id="t-wiki"><div class="icon">1</div><div><div class="name">Wikipedia: find an article</div><div class="detail">Not run yet</div>
-      <div class="preview" id="preview"><img id="thumb" alt=""><div class="detail" id="thumb-title"></div></div></div></div>
-    <div class="row" id="t-gemini"><div class="icon">2</div><div><div class="name">Gemini: write a summary</div><div class="detail">Not run yet</div></div></div>
-    <div class="row" id="t-storage"><div class="icon">3</div><div><div class="name">Saving on the phone</div><div class="detail">Not run yet</div></div></div>
-    <div class="row" id="t-extras"><div class="icon">4</div><div><div class="name">Extras (screen awake, offline)</div><div class="detail">Not run yet</div></div></div>
-  </div>
-
-  <button class="secondary" id="copy" hidden>Copy results to send to Claude</button>
-</main>
+<main id="app" aria-live="polite"></main>
 
 <script>
+'use strict';
 {
-  const MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite"];
-  const WIKI = "https://en.wikipedia.org/w/api.php";
-  const log = [];
-  const $ = (id) => document.getElementById(id);
+// =====================================================================
+// Rabbit Hole: finds Wikipedia articles where your interests overlap and
+// turns them into 5–10 minute stories, written by Gemini.
+// Everything runs in the browser. Wikipedia and Gemini are called directly.
+// Reads live in IndexedDB; settings (including your key) in localStorage.
+// =====================================================================
 
-  function set(id, state, text) {
-    const row = $(id);
-    const icon = row.querySelector(".icon");
-    icon.className = "icon " + state;
-    icon.textContent = { ok: "✓", bad: "✕", warn: "!", run: "…" }[state] || icon.textContent;
-    row.querySelector(".detail").textContent = text;
-    log.push(`[${row.querySelector(".name").textContent}] ${state.toUpperCase()}: ${text}`);
-  }
+// ---------- Config ----------
+// label: what you see. q: the word used when searching Wikipedia.
+const CATEGORIES = [
+  { label: "Healthcare", q: "health" }, { label: "Medicine", q: "medical" }, { label: "Biology", q: "biology" },
+  { label: "Technology", q: "technology" }, { label: "Science", q: "scientific" }, { label: "History", q: "history" },
+  { label: "Business", q: "company" }, { label: "Economics", q: "economic" }, { label: "Law & policy", q: "law" },
+  { label: "Engineering", q: "engineering" }, { label: "Space", q: "space" }, { label: "Psychology", q: "psychology" },
+  { label: "Environment", q: "environmental" }, { label: "Food", q: "food" }, { label: "Art & design", q: "art" },
+  { label: "Music", q: "music" }, { label: "Sports", q: "sport" }, { label: "Military history", q: "military" },
+  { label: "Philosophy", q: "philosophy" }, { label: "Geography", q: "geography" },
+];
+const DEFAULT_SELECTED = ["Healthcare", "Medicine", "Biology", "Technology", "Science"];
+const MODELS = {
+  "gemini-3.8-flash": "Gemini 3.8 Flash (best writing)",
+  "gemini-3.6-flash": "Gemini 3.6 Flash",
+  "gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite (fastest)",
+};
+const FALLBACK_MODEL = "gemini-3.5-flash-lite";
+const PICKER_MODEL = "gemini-3.5-flash-lite"; // choosing the article is a small job; saves Flash quota for writing
+const WORDS = { min: 1200, target: 1800, max: 2400 }; // 5–10 minutes at ~240 words a minute
+const WIKI = "https://en.wikipedia.org/w/api.php";
+const QUALITY = ['hastemplate:"Featured article"', 'hastemplate:"Good article"'];
 
-  function withTimeout(ms) {
-    const c = new AbortController();
-    setTimeout(() => c.abort(), ms);
-    return c.signal;
-  }
+// ---------- Small helpers ----------
+const app = document.getElementById("app");
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const randInt = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const shuffle = (arr) => arr.map((v) => [Math.random(), v]).sort((x, y) => x[0] - y[0]).map((p) => p[1]);
+const sleep = (ms, signal) => new Promise((res, rej) => {
+  const t = setTimeout(res, ms);
+  signal?.addEventListener("abort", () => { clearTimeout(t); rej(new DOMException("Aborted", "AbortError")); }, { once: true });
+});
+const words = (s) => (String(s).match(/\S+/g) || []).length;
+const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+const plainText = (html) => { const t = document.createElement("textarea"); t.innerHTML = String(html || "").replace(/<[^>]+>/g, ""); return t.value; };
+class AppError extends Error {}
 
-  async function testWikipedia() {
-    set("t-wiki", "run", "Searching Wikipedia's Featured articles…");
-    const params = new URLSearchParams({
-      action: "query", list: "search", srsearch: 'volcano hastemplate:"Featured article"', srlimit: "20",
-      srnamespace: "0", format: "json", formatversion: "2", origin: "*",
+const ICONS = {
+  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  dice: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.2" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1.2" fill="currentColor"/><circle cx="15.5" cy="8.5" r="1.2" fill="currentColor"/><circle cx="8.5" cy="15.5" r="1.2" fill="currentColor"/></svg>',
+  spark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>',
+  back: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+  share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13"/><path d="M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>',
+  down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7l10 10"/><path d="M17 8v9H8"/></svg>',
+  book: '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg>',
+};
+// The logo (bent rabbit ears coming out of a hole in a globe), without its orange tile.
+const LOGO_ART = `<svg class="hero-art" viewBox="90 30 332 445" aria-hidden="true">
+  <defs><clipPath id="g"><circle cx="256" cy="318" r="168"/></clipPath></defs>
+  <g transform="translate(256 286) scale(0.88) translate(-256 -286)">
+    <circle cx="256" cy="318" r="168" fill="var(--card)"/>
+    <g clip-path="url(#g)" fill="none" stroke="var(--ink)" stroke-width="7">
+      <ellipse cx="256" cy="318" rx="168" ry="56"/>
+      <ellipse cx="256" cy="210" rx="150" ry="40"/>
+      <ellipse cx="256" cy="430" rx="150" ry="40"/>
+      <ellipse cx="256" cy="318" rx="60" ry="168"/>
+      <ellipse cx="256" cy="318" rx="118" ry="168"/>
+      <line x1="256" y1="150" x2="256" y2="486"/>
+    </g>
+    <circle cx="256" cy="318" r="168" fill="none" stroke="var(--ink)" stroke-width="11"/>
+    <path d="M228 70 L284 70 L272 205 L240 205 Z" fill="var(--card)"/>
+    <ellipse cx="256" cy="215" rx="84" ry="27" fill="var(--card)" stroke="var(--ink)" stroke-width="8"/>
+    <ellipse cx="256" cy="217" rx="68" ry="20" fill="var(--ink)"/>
+    <g transform="translate(256 222) scale(1.25) translate(-256 -222)">
+      <path d="M214 222 C204 170 192 118 200 78 C206 46 240 44 244 76 C248 116 246 170 250 222 Z" fill="var(--card)" stroke="var(--ink)" stroke-width="6.4" stroke-linejoin="round"/>
+      <path d="M222 196 C216 158 210 122 215 94 C218 78 230 78 232 94 C234 124 233 160 235 196" fill="none" stroke="var(--ink)" stroke-width="4" stroke-linecap="round"/>
+      <path d="M262 222 C264 176 268 132 280 104 C292 76 322 62 352 70 C380 78 384 106 360 114 C340 120 318 112 306 126 C296 140 296 180 300 222 Z" fill="var(--card)" stroke="var(--ink)" stroke-width="6.4" stroke-linejoin="round"/>
+      <path d="M274 196 C276 164 280 134 290 115 C300 96 320 88 340 92" fill="none" stroke="var(--ink)" stroke-width="4" stroke-linecap="round"/>
+    </g>
+    <path d="M188 217 A68 20 0 0 0 324 217 Z" fill="var(--ink)"/>
+  </g>
+</svg>`;
+
+// ---------- Settings (localStorage) ----------
+const store = {
+  get(k, fallback) { try { const v = localStorage.getItem("rh." + k); return v === null ? fallback : JSON.parse(v); } catch { return fallback; } },
+  set(k, v) { try { localStorage.setItem("rh." + k, JSON.stringify(v)); } catch {} },
+};
+const S = {
+  get key() { return store.get("key", ""); },
+  set key(v) { store.set("key", String(v || "").trim()); },
+  get selected() { return store.get("selected", DEFAULT_SELECTED); },
+  set selected(v) { store.set("selected", v); },
+  get custom() { return store.get("custom", []); },
+  set custom(v) { store.set("custom", v); },
+  get model() { return store.get("model", "gemini-3.8-flash"); },
+  set model(v) { store.set("model", String(v || "").trim() || "gemini-3.8-flash"); },
+  get lastModelIssue() { return store.get("lastModelIssue", ""); },
+  set lastModelIssue(v) { store.set("lastModelIssue", v); },
+  get installDismissed() { return store.get("installDismissed", false); },
+  set installDismissed(v) { store.set("installDismissed", v); },
+};
+const allInterests = () => [...CATEGORIES.map((c) => c.label), ...S.custom];
+const searchTerm = (label) => CATEGORIES.find((c) => c.label === label)?.q || label;
+
+// ---------- Reads (IndexedDB) ----------
+const DB = {
+  db: null,
+  open() {
+    if (this.db) return Promise.resolve(this.db);
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open("rabbit-hole", 1);
+      req.onupgradeneeded = () => req.result.createObjectStore("reads", { keyPath: "id" });
+      req.onsuccess = () => { this.db = req.result; resolve(this.db); };
+      req.onerror = () => reject(req.error);
     });
-    try {
-      const res = await fetch(`${WIKI}?${params}`, { signal: withTimeout(20000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const hits = data.query?.search ?? [];
-      if (!hits.length) {
-        set("t-wiki", "warn", "Wikipedia answered, but the Featured-article search returned nothing. The app would fall back to plain search.");
-        return { ok: true, title: "Volcano" };
-      }
-      const title = hits[Math.floor(Math.random() * hits.length)].title;
+  },
+  async run(mode, fn) {
+    const db = await this.open();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction("reads", mode);
+      const req = fn(tx.objectStore("reads"));
+      let out;
+      if (req) req.onsuccess = () => { out = req.result; };
+      tx.oncomplete = () => resolve(out);
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+  all() { return this.run("readonly", (s) => s.getAll()); },
+  put(read) { return this.run("readwrite", (s) => s.put(read)); },
+  remove(id) { return this.run("readwrite", (s) => s.delete(id)); },
+};
+let reads = [];
+const sortReads = () => reads.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 
-      const p2 = new URLSearchParams({
-        action: "query", prop: "pageimages|extracts", titles: title, piprop: "thumbnail", pithumbsize: "200",
-        explaintext: "1", exintro: "1", format: "json", formatversion: "2", origin: "*",
-      });
-      const res2 = await fetch(`${WIKI}?${p2}`, { signal: withTimeout(20000) });
-      const page = (await res2.json()).query?.pages?.[0];
-      if (page?.thumbnail?.source) {
-        $("thumb").src = page.thumbnail.source;
-        $("thumb-title").textContent = title;
-        $("preview").classList.add("show");
-      }
-      set("t-wiki", "ok", `Found ${hits.length} Featured articles about volcanoes. Picked “${title}”.`);
-      return { ok: true, title, intro: (page?.extract || "").slice(0, 3000) };
-    } catch (e) {
-      set("t-wiki", "bad", `Couldn't reach Wikipedia (${e.name}: ${e.message}). Check your internet connection and try again.`);
-      return { ok: false };
+// ---------- Wikipedia ----------
+async function wiki(params, signal) {
+  const query = new URLSearchParams({ ...params, format: "json", formatversion: "2", origin: "*" });
+  let res;
+  try { res = await fetch(`${WIKI}?${query}`, { signal }); }
+  catch (e) { if (e.name === "AbortError") throw e; throw new AppError("Couldn't reach Wikipedia. Check your internet connection."); }
+  if (!res.ok) throw new AppError(`Wikipedia had a problem (error ${res.status}). Try again in a moment.`);
+  return res.json();
+}
+
+async function search(query, offset, signal) {
+  const data = await wiki({ action: "query", list: "search", srsearch: query, srnamespace: "0",
+                            srlimit: "40", sroffset: String(offset), srprop: "wordcount|snippet" }, signal);
+  return { hits: data.query?.search ?? [], total: data.query?.searchinfo?.totalhits ?? 0 };
+}
+
+function isJunkTitle(t) {
+  return ["List of", "Lists of", "Index of", "Outline of", "Timeline of", "Glossary of"].some((p) => t.startsWith(p)) || t.includes("(disambiguation)");
+}
+
+function cleanArticle(text) {
+  let t = text;
+  for (const name of ["See also", "References", "Notes", "External links", "Further reading", "Sources", "Bibliography", "Citations", "Footnotes"]) {
+    const i = t.indexOf(`\n== ${name} ==`);
+    if (i >= 0) t = t.slice(0, i);
+  }
+  return t.slice(0, 100000).trim();
+}
+
+async function fetchArticle(title, signal) {
+  const data = await wiki({ action: "query", prop: "extracts|pageprops|info|pageimages|description", explaintext: "1",
+                            titles: title, redirects: "1", inprop: "url", ppprop: "disambiguation",
+                            piprop: "thumbnail", pithumbsize: "1200" }, signal);
+  const page = data.query?.pages?.[0];
+  if (!page || page.missing || page.pageprops?.disambiguation !== undefined || !page.extract) return null;
+  return {
+    title: page.title,
+    url: page.fullurl || `https://en.wikipedia.org/wiki/${encodeURIComponent(page.title.replace(/ /g, "_"))}`,
+    text: cleanArticle(page.extract),
+    image: page.thumbnail?.source || null,
+    description: page.description || "",
+  };
+}
+
+// Gathers candidate articles where your interests overlap.
+// Searches combinations of 3, 2 and 1 interests among Wikipedia's Featured and Good articles,
+// and remembers which interests each candidate matched.
+async function buildPool(selected, seen, signal) {
+  const queries = [];
+  if (!selected.length) {
+    // Surprise me: random pages of all Featured and Good articles.
+    for (const f of QUALITY) queries.push({ q: f, labels: [], offset: randInt(0, 6000) });
+    queries.push({ q: pick(QUALITY), labels: [], offset: randInt(0, 6000) });
+  } else {
+    const combos = new Map();
+    const add = (labels) => { const key = labels.slice().sort().join("|"); if (!combos.has(key)) combos.set(key, labels); };
+    if (selected.length >= 3) for (let i = 0; i < 3; i++) add(shuffle(selected).slice(0, 3));
+    if (selected.length >= 2) for (let i = 0; i < 3; i++) add(shuffle(selected).slice(0, 2));
+    add([pick(selected)]);
+    for (const labels of [...combos.values()].slice(0, 7)) {
+      const q = labels.map(searchTerm).join(" ");
+      for (const f of QUALITY) queries.push({ q: `${q} ${f}`, labels, offset: labels.length === 1 ? randInt(0, 120) : 0 });
     }
   }
 
-  async function callGemini(model, key, prompt, keyInQuery) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent` +
-                (keyInQuery ? `?key=${encodeURIComponent(key)}` : "");
-    const headers = { "Content-Type": "application/json" };
-    if (!keyInQuery) headers["x-goog-api-key"] = key;
-    const body = {
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseJsonSchema: {
-          type: "object",
-          properties: { title: { type: "string" }, summary: { type: "string" } },
-          required: ["title", "summary"],
-        },
-      },
-    };
-    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal: withTimeout(60000) });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const err = new Error(data.error?.message || `HTTP ${res.status}`);
-      err.status = res.status;
-      throw err;
+  const results = await Promise.all(queries.map(async ({ q, labels, offset }) => {
+    let r = await search(q, offset, signal).catch((e) => { if (e.name === "AbortError") throw e; return { hits: [] }; });
+    if (!r.hits.length && offset) r = await search(q, 0, signal).catch((e) => { if (e.name === "AbortError") throw e; return { hits: [] }; });
+    return r.hits.map((h) => ({ ...h, labels }));
+  }));
+
+  const byTitle = new Map();
+  for (const h of results.flat()) {
+    if (seen.has(h.title) || isJunkTitle(h.title) || (h.wordcount || 0) < 1500) continue;
+    const prev = byTitle.get(h.title);
+    if (prev) prev.labels = [...new Set([...prev.labels, ...h.labels])];
+    else byTitle.set(h.title, { title: h.title, snippet: plainText(h.snippet).slice(0, 220), labels: [...h.labels] });
+  }
+  let pool = shuffle([...byTitle.values()]).sort((a, b) => b.labels.length - a.labels.length);
+
+  // Niche interests with few rated articles: fall back to all articles on each topic.
+  if (pool.length < 5 && selected.length) {
+    for (const label of selected) {
+      const { hits } = await search(searchTerm(label), randInt(0, 50), signal).catch((e) => { if (e.name === "AbortError") throw e; return { hits: [] }; });
+      for (const h of hits) if (!seen.has(h.title) && !isJunkTitle(h.title) && !byTitle.has(h.title))
+        { byTitle.set(h.title, 1); pool.push({ title: h.title, snippet: plainText(h.snippet).slice(0, 220), labels: [label] }); }
     }
-    const text = (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text || "").join("");
+  }
+  return pool.slice(0, 30);
+}
+
+async function relatedTitles(title, seen, signal) {
+  const { hits } = await search(`morelike:${title}`, 0, signal);
+  return hits.map((h) => h.title).filter((t) => t !== title && !seen.has(t) && !isJunkTitle(t)).slice(0, 3);
+}
+
+// ---------- Gemini ----------
+class GeminiError extends Error { constructor(status, message) { super(message); this.status = status; } }
+
+const READ_SCHEMA = {
+  type: "object",
+  properties: {
+    title: { type: "string", description: "A story-style title with a hook. It can differ from the article's name." },
+    teaser: { type: "string", description: "One sentence that sets up the story and makes someone want to read on." },
+    introduction: { type: "array", items: { type: "string" }, description: "One or two opening paragraphs: a hook scene, moment or question that pulls the reader in." },
+    sections: { type: "array", items: { type: "object", properties: { heading: { type: "string" }, paragraphs: { type: "array", items: { type: "string" } } }, required: ["heading", "paragraphs"] } },
+    takeaway: { type: "string", description: "A short closing paragraph: why this story still matters." },
+  },
+  required: ["title", "teaser", "introduction", "sections", "takeaway"],
+};
+const READ_HINT = "Reply with only a JSON object with keys: title, teaser, introduction (array of strings), sections (array of {heading, paragraphs}), takeaway.";
+
+const PICK_SCHEMA = {
+  type: "object",
+  properties: {
+    number: { type: "integer", description: "The number of the chosen candidate." },
+    connects: { type: "array", items: { type: "string" }, description: "Which of the reader's interests this story genuinely connects." },
+    storyAngle: { type: "string", description: "One sentence: the story to tell, e.g. how or why it came to be." },
+  },
+  required: ["number", "connects", "storyAngle"],
+};
+const PICK_HINT = "Reply with only a JSON object with keys: number (integer), connects (array of strings), storyAngle (string).";
+
+function readInstructions(interests, angle) {
+  const interestLine = interests.length
+    ? `The reader is into: ${interests.join(", ")}. Where the article supports it, draw out how this story connects those fields.`
+    : "The reader is curious about everything.";
+  return `You write for Rabbit Hole, an app that turns Wikipedia articles into gripping true stories for curious people. Write like a great magazine storyteller who is also a smart, warm friend: vivid, clear, a little playful, never stuffy. Explain jargon in plain words.
+
+Turn the topic into a story, not a summary. Don't describe what the thing is or does; find the narrative behind it. Ask: why did this come to exist? What problem, crisis, accident, rivalry or bold idea started it? Who were the people, what did they risk, what went wrong, what was the turning point, and what did it change? For example, the Wikipedia article on the FDA is a dry description of an agency, but the story of how deadly patent medicines and a poisoning scandal forced its creation is gripping. If the article has little history, build the story around whatever tension, mystery or stakes it does contain.
+
+${interestLine}
+${angle ? `Suggested story angle: ${angle}` : ""}
+
+Rules:
+- Use only facts stated in the article. Keep names, dates and numbers exactly right. Never invent scenes, quotes, dialogue, motives or details, never add outside knowledge, and never contradict yourself.
+- Open with a hook: a moment, a problem or a question, not a definition.
+- Organize it as a story arc in 4 to 7 sections (for example: the world before, the spark, the struggle, the turning point, the fallout, why it still matters), but write headings specific to this story, in plain, inviting words.
+- Length: between 1,500 and 2,100 words in total across the introduction, sections and takeaway (aim for about ${WORDS.target}). That's a 5 to 10 minute read.
+- Paragraphs of 2 to 5 sentences. Plain text only: no markdown, no bullet points, no emoji.`;
+}
+
+async function geminiCall(model, { system, prompt, schema, hint }, signal, useSchema = true) {
+  const generationConfig = { responseMimeType: "application/json" };
+  let systemText = system;
+  if (useSchema) generationConfig.responseJsonSchema = schema;
+  else systemText += "\n\n" + hint;
+  let res;
+  try {
+    res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": S.key },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemText }] },
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig,
+      }),
+      signal,
+    });
+  } catch (e) {
+    if (e.name === "AbortError") throw e;
+    throw new AppError(document.hidden || wasHidden
+      ? "Rabbit Hole was interrupted when you switched apps. Keep it open while it writes, then try again."
+      : "Couldn't reach Google. Check your internet connection and try again.");
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = data.error?.message || `HTTP ${res.status}`;
+    if (useSchema && res.status === 400 && /schema/i.test(msg)) return geminiCall(model, { system, prompt, schema, hint }, signal, false);
+    throw new GeminiError(res.status, msg);
+  }
+  const cand = data.candidates?.[0];
+  const text = (cand?.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || "").join("");
+  if (!text) throw new AppError(`Gemini didn't write anything (${data.promptFeedback?.blockReason || cand?.finishReason || "no content"}). Try another article.`);
+  try {
     const start = text.indexOf("{"), end = text.lastIndexOf("}");
     return JSON.parse(text.slice(start, end + 1));
-  }
+  } catch { throw new AppError("Gemini's reply came back garbled. Give it another try."); }
+}
 
-  async function testGemini(key, article) {
-    if (!key) {
-      set("t-gemini", "bad", "No API key entered. Paste your key above and run the test again.");
-      return { ok: false, reason: "nokey" };
-    }
-    const topic = article.title || "Volcano";
-    const prompt = `Write a catchy title and a two-sentence, friendly summary of the Wikipedia article "${topic}".` +
-                   (article.intro ? ` Use only this text:\n\n${article.intro}` : "");
-    let lastError = null;
+function friendlyGemini(e) {
+  if (!(e instanceof GeminiError)) return e.message;
+  const m = e.message || "";
+  if ((e.status === 400 && /api key|API_KEY/i.test(m)) || e.status === 401 || e.status === 403)
+    return "Google didn't accept your API key. Check it in Settings (copy the whole key again).";
+  if (e.status === 429) return "You've hit Gemini's free limit for the moment. Wait a minute (or until tomorrow) and try again.";
+  if (e.status === 404) return `Google doesn't recognise that model (${m}). Pick a different model in Settings.`;
+  return `Gemini had a problem (error ${e.status}): ${m}`;
+}
 
-    for (const model of MODELS) {
-      for (const keyInQuery of [false, true]) {
-        set("t-gemini", "run", `Asking ${model}…`);
-        try {
-          const out = await callGemini(model, key, prompt, keyInQuery);
-          const how = keyInQuery ? " (using the key-in-address method)" : "";
-          set("t-gemini", "ok", `${model} replied${how}: “${out.title}” — ${out.summary}`);
-          return { ok: true, model, keyInQuery };
-        } catch (e) {
-          lastError = e;
-          if (e.status) break;            // Google answered with an error: the connection works, so don't retry the other method.
-          if (e.name === "AbortError") break;
-        }
-      }
-      if (lastError?.status && ![404, 429, 500, 503].includes(lastError.status)) break;
-    }
+// Asks Gemini to choose the candidate that spans the most interests and has the best story.
+async function pickStory(pool, selected, signal) {
+  const list = pool.map((c, i) => `${i + 1}. ${c.title} | matched: ${c.labels.join(", ") || "none"} | ${c.snippet}`).join("\n");
+  const job = {
+    system: "You choose the next article for a curious reader of Rabbit Hole, an app that turns Wikipedia articles into true stories.",
+    prompt: `${selected.length ? `The reader's interests: ${selected.join(", ")}.` : "The reader is curious about everything."}
 
-    const e = lastError;
-    if (!e.status && e.name !== "AbortError") {
-      set("t-gemini", "bad", `The phone's browser blocked the request to Google before it was sent (${e.name}: ${e.message}). This is the "CORS" problem: the app would need the small free relay instead.`);
-      return { ok: false, reason: "cors" };
-    }
-    if (e.name === "AbortError") {
-      set("t-gemini", "warn", "Google didn't answer within 60 seconds. Try again on a stronger connection.");
-      return { ok: false, reason: "timeout" };
-    }
-    if (e.status === 400 && /api key/i.test(e.message) || e.status === 401 || e.status === 403) {
-      set("t-gemini", "warn", `Google rejected the key: ${e.message}. The connection works. Check you copied the whole key.`);
-      return { ok: false, reason: "key", connected: true };
-    }
-    if (e.status === 429) {
-      set("t-gemini", "warn", `Google answered but said you're over the free limit right now: ${e.message}. The connection works; wait a minute and retry.`);
-      return { ok: false, reason: "limit", connected: true };
-    }
-    set("t-gemini", "warn", `Google answered with an error (HTTP ${e.status}): ${e.message}. The connection works.`);
-    return { ok: false, reason: "other", connected: true };
-  }
+Pick the ONE candidate that:
+1. connects as many of the reader's interests as possible (a topic that sits where medicine meets law and business beats one that touches a single field), and
+2. has the best story behind it: an origin, a crisis, a scandal, a rivalry, a bold invention, a turning point, unexpected consequences. Prefer topics where "how or why did this come to be?" is fascinating over dry descriptions, rankings or catalogues.
 
-  async function testStorage() {
-    set("t-storage", "run", "Checking…");
-    const notes = [];
-    let ok = true;
+Candidates (title | interests its search matched | snippet):
+${list}`,
+    schema: PICK_SCHEMA,
+    hint: PICK_HINT,
+  };
+  for (const model of [PICKER_MODEL, S.model]) {
     try {
-      localStorage.setItem("rh-test", "1");
-      ok = localStorage.getItem("rh-test") === "1";
-      localStorage.removeItem("rh-test");
-      notes.push(ok ? "Local storage works." : "Local storage didn't keep data.");
-    } catch (e) { ok = false; notes.push(`Local storage unavailable (${e.name}).`); }
+      const out = await geminiCall(model, job, signal);
+      const c = pool[Number(out.number) - 1];
+      if (c) return { candidate: c, connects: (out.connects || []).filter((x) => selected.includes(x)), angle: String(out.storyAngle || "") };
+    } catch (e) {
+      if (e.name === "AbortError") throw e;
+      if (e instanceof GeminiError && ![404, 429, 500, 503, 504].includes(e.status)) throw new AppError(friendlyGemini(e));
+    }
+  }
+  return null; // fall back to the candidate that matched the most interests
+}
 
-    try {
-      await new Promise((resolve, reject) => {
-        const req = indexedDB.open("rh-test", 1);
-        req.onupgradeneeded = () => req.result.createObjectStore("s");
-        req.onsuccess = () => { req.result.close(); indexedDB.deleteDatabase("rh-test"); resolve(); };
-        req.onerror = () => reject(req.error);
-      });
-      notes.push("Database storage works.");
-    } catch (e) { ok = false; notes.push(`Database storage unavailable (${e?.name || "error"}).`); }
+async function findArticle(selected, seen, onStatus, signal) {
+  onStatus(selected.length ? "Looking where your interests overlap…" : "Rummaging through Wikipedia's best articles…");
+  const pool = await buildPool(selected, seen, signal);
+  if (!pool.length) throw new AppError("Couldn't find articles for those interests. Try selecting different or broader ones.");
+  onStatus("Choosing the best story…");
+  const choice = await pickStory(pool, selected, signal);
+  const order = choice ? [choice.candidate, ...pool.filter((c) => c !== choice.candidate)] : pool;
+  for (const cand of order.slice(0, 5)) {
+    const article = await fetchArticle(cand.title, signal);
+    if (article && article.text.length > 6000) {
+      const chosen = choice && cand === choice.candidate;
+      return { article, angle: chosen ? choice.angle : "", connects: chosen && choice.connects.length ? choice.connects : cand.labels };
+    }
+  }
+  throw new AppError("Couldn't find a good article this time. Try again.");
+}
 
-    const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
-    if (navigator.storage?.persist) {
+// Writes the story. Retries the chosen model once if it's busy, then falls back to Flash-Lite,
+// remembering why so it can be shown in the read and in Settings.
+async function writeStory(article, interests, angle, onStatus, signal) {
+  const job = { system: readInstructions(interests, angle),
+                prompt: `Article title: ${article.title}\n\n<article>\n${article.text}\n</article>`,
+                schema: READ_SCHEMA, hint: READ_HINT };
+  const chosen = S.model;
+  const order = chosen === FALLBACK_MODEL ? [chosen] : [chosen, FALLBACK_MODEL];
+  let note = "";
+
+  for (let i = 0; i < order.length; i++) {
+    const model = order[i];
+    const tries = i === 0 && order.length > 1 ? 2 : 1;
+    for (let t = 0; t < tries; t++) {
       try {
-        const persisted = await navigator.storage.persist();
-        notes.push(persisted ? "The phone agreed to keep data permanently." :
-          standalone ? "The phone didn't promise permanent storage yet (it decides over time)." :
-                       "Permanent storage is decided after you add the app to your Home Screen.");
-      } catch { notes.push("Couldn't ask for permanent storage."); }
+        if (t > 0) { onStatus("Gemini was busy, trying again…"); await sleep(4000, signal); }
+        let draft = await geminiCall(model, job, signal);
+        const n = draftWords(draft);
+        if (n < WORDS.min || n > WORDS.max) {
+          onStatus("Adjusting the length…");
+          const fix = n < WORDS.min
+            ? `Your previous version was only ${n} words, too short for a 5 to 10 minute read. Write it again at about ${WORDS.target} words, digging deeper into the article's story.`
+            : `Your previous version was ${n} words, longer than a 10 minute read. Write it again at about ${WORDS.target} words, keeping the strongest parts of the story.`;
+          try { draft = await geminiCall(model, { ...job, prompt: job.prompt + "\n\n" + fix }, signal); } catch (e) { if (e.name === "AbortError") throw e; }
+        }
+        if (model === chosen) S.lastModelIssue = "";
+        return { draft, model, note };
+      } catch (e) {
+        if (e.name === "AbortError" || !(e instanceof GeminiError)) throw e;
+        const retryable = [429, 500, 503, 504].includes(e.status);
+        if (retryable && t < tries - 1) continue;
+        if ((retryable || e.status === 404) && i < order.length - 1) {
+          note = `${MODELS[model] || model} wasn't available (${e.status}: ${e.message}), so ${MODELS[order[i + 1]] || order[i + 1]} wrote this one.`;
+          S.lastModelIssue = `${new Date().toLocaleString()}: ${model} → error ${e.status}: ${e.message}`;
+          onStatus("Switching to Flash-Lite…");
+          break;
+        }
+        throw new AppError(friendlyGemini(e));
+      }
     }
-    notes.push(standalone ? "Running as a Home Screen app." : "Running in the browser (that's expected for this test).");
-    set("t-storage", ok ? "ok" : "bad", notes.join(" "));
-    return { ok };
   }
+  throw new AppError("Gemini couldn't write a story right now. Try again in a minute.");
+}
 
-  async function testExtras() {
-    const notes = [];
-    notes.push("wakeLock" in navigator ? "Can keep the screen awake while a summary is written." :
-                                         "Can't keep the screen awake; the app would just offer a retry if interrupted.");
-    notes.push("serviceWorker" in navigator ? "Offline support is available." : "Offline support isn't available here.");
-    set("t-extras", "ok", notes.join(" "));
-  }
+function draftWords(d) {
+  return words([...(d.introduction || []), ...(d.sections || []).flatMap((s) => s.paragraphs || []), d.takeaway || ""].join(" "));
+}
 
-  function verdict(wiki, gemini, storage) {
-    const v = $("verdict");
-    let cls, head, body;
-    if (wiki.ok && gemini.ok && storage.ok) {
-      cls = "ok"; head = "✓ Everything works. The Rabbit Hole web app will run on this phone.";
-      body = "Tap “Copy results” and paste them to Claude so it can build the full app.";
-    } else if (!wiki.ok) {
-      cls = "bad"; head = "Couldn't reach Wikipedia.";
-      body = "This is usually the internet connection. Try again on Wi-Fi. (If Wikipedia can't be reached, the Gemini result isn't meaningful either.)";
-    } else if (gemini.reason === "cors") {
-      cls = "bad"; head = "Gemini is blocked from web pages on this phone.";
-      body = "Not a dead end: the app needs a free relay (a Cloudflare Worker). Copy the results and send them to Claude.";
-    } else if (gemini.connected) {
-      cls = "warn"; head = "The connection to Gemini works, but this test didn't finish.";
-      body = "The important part (that the phone can reach Google) passed. See item 2 for what to fix, then run it again.";
-    } else if (!storage.ok) {
-      cls = "warn"; head = "Saving on the phone isn't working in this browser mode.";
-      body = "If you're in a private/incognito tab, open a normal tab and run the test again.";
+// ---------- Generating a read ----------
+let job = null;        // { status, controller } while working
+let jobError = "";     // last error, shown until the next attempt
+let wasHidden = false; // did the user leave the app mid-job?
+document.addEventListener("visibilitychange", () => { if (job && document.hidden) wasHidden = true; });
+
+function setStatus(text) { if (job) { job.status = text; renderJobSlots(); } }
+
+async function startRead({ title = null, surprise = false } = {}) {
+  if (job) return;
+  if (!S.key) { location.hash = "#settings"; return; }
+  const controller = new AbortController();
+  const { signal } = controller;
+  job = { status: title ? `Opening “${title}”…` : "Getting started…", controller };
+  jobError = "";
+  wasHidden = false;
+  renderJobSlots();
+  let lock = null;
+  try { lock = await navigator.wakeLock?.request("screen"); } catch {}
+
+  try {
+    const selected = surprise ? [] : S.selected;
+    const seen = new Set(reads.map((r) => r.articleTitle));
+    let article, angle = "", connects = [];
+    if (title) {
+      article = await fetchArticle(title, signal);
+      if (!article) throw new AppError("Couldn't open that article. Try another one.");
     } else {
-      cls = "warn"; head = "The test didn't finish."; body = "See the items below, then run it again.";
+      ({ article, angle, connects } = await findArticle(selected, seen, setStatus, signal));
     }
-    v.className = "card " + cls;
-    v.innerHTML = "";
-    v.append(head);
-    const p = document.createElement("p"); p.textContent = body; v.append(p);
+    setStatus(`Writing the story of “${article.title}” (about 20–40 seconds)…`);
+    const { draft, model, note } = await writeStory(article, title ? S.selected : selected, angle, setStatus, signal);
+    seen.add(article.title);
+    const related = await relatedTitles(article.title, seen, signal).catch(() => []);
+    const tidy = (s) => String(s || "").replace(/\*\*/g, "").replace(/^#+\s*/, "").trim();
+    const sections = (draft.sections || [])
+      .map((s) => ({ heading: tidy(s.heading), paragraphs: (s.paragraphs || []).map(tidy).filter(Boolean) }))
+      .filter((s) => s.paragraphs.length);
+    if (!sections.length) throw new AppError("Gemini's story came back empty. Give it another try.");
+    const read = {
+      id: uid(),
+      createdAt: new Date().toISOString(),
+      title: tidy(draft.title) || article.title,
+      teaser: tidy(draft.teaser),
+      introduction: (draft.introduction || []).map(tidy).filter(Boolean),
+      sections,
+      takeaway: tidy(draft.takeaway),
+      connects,
+      storyAngle: angle,
+      relatedTitles: related,
+      articleTitle: article.title,
+      articleURL: article.url,
+      imageURL: article.image,
+      description: article.description,
+      model,
+      note,
+      isRead: false,
+    };
+    await DB.put(read);
+    reads.unshift(read);
+    job = null;
+    location.hash = `#read/${read.id}`;
+    render();
+  } catch (e) {
+    job = null;
+    if (e.name !== "AbortError") jobError = e instanceof AppError ? e.message : `Something went wrong: ${e.message}`;
+    renderJobSlots();
+  } finally {
+    try { await lock?.release(); } catch {}
   }
+}
 
-  $("run").addEventListener("click", async () => {
-    const btn = $("run");
-    btn.disabled = true; btn.textContent = "Testing…";
-    log.length = 0;
-    log.push(`Browser: ${navigator.userAgent}`, `Page: ${location.origin}`, `Time: ${new Date().toISOString()}`);
-    const key = $("key").value.trim();
-    const wiki = await testWikipedia();
-    const gemini = wiki.ok ? await testGemini(key, wiki) : await testGemini(key, {});
-    const storage = await testStorage();
-    await testExtras();
-    verdict(wiki, gemini, storage);
-    log.push(`Verdict: ${$("verdict").firstChild?.textContent || ""}`);
-    $("copy").hidden = false;
-    btn.disabled = false; btn.textContent = "Run the test again";
-  });
+// ---------- Rendering ----------
+function minutesOf(r) {
+  return Math.max(1, Math.round(words([...r.introduction, ...r.sections.flatMap((s) => s.paragraphs), r.takeaway].join(" ")) / 240));
+}
+const fmtDate = (iso) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
-  $("copy").addEventListener("click", async () => {
-    const text = log.join("\n");
-    try { await navigator.clipboard.writeText(text); $("copy").textContent = "Copied ✓"; }
-    catch { prompt("Copy these results:", text); }
+function jobSlotHTML(context) {
+  if (job) {
+    return `<div class="job"><div class="spinner" aria-hidden="true"></div><div>${esc(job.status)}</div></div>
+      <button class="btn btn-line" data-action="cancel">Cancel</button>`;
+  }
+  const err = jobError ? `<div class="error" role="alert">${esc(jobError)}</div>` : "";
+  if (context === "home") {
+    const n = S.selected.length;
+    return `<div class="stack">
+      <button class="btn btn-primary" data-action="find">${ICONS.dice} Find me a rabbit hole</button>
+      <button class="btn btn-soft" data-action="surprise">${ICONS.spark} Surprise me (any topic)</button>
+    </div>
+    <p class="small muted" style="margin:10px 0 0">${n ? `Looking where ${n === 1 ? "your interest" : `your ${n} interests`} overlap.` : "No interests selected, so you'll get a story about anything."}</p>${err}`;
+  }
+  return err;
+}
+function renderJobSlots() {
+  document.querySelectorAll("[data-job]").forEach((el) => { el.innerHTML = jobSlotHTML(el.dataset.job); });
+  document.querySelectorAll("[data-deeper]").forEach((b) => { b.disabled = !!job; });
+}
+
+function interestsCard() {
+  const selected = new Set(S.selected);
+  const custom = new Set(S.custom);
+  const chips = allInterests().map((label) => {
+    const on = selected.has(label);
+    const toggle = `<button class="chip toggle" data-action="toggle-interest" data-label="${esc(label)}" aria-pressed="${on}">${esc(label)}</button>`;
+    return custom.has(label)
+      ? `<span class="chip-group">${toggle}<button class="chip-x" data-action="remove-custom" data-label="${esc(label)}" aria-label="Remove ${esc(label)}">×</button></span>`
+      : toggle;
+  }).join("");
+  return `
+    <section class="card" id="interests">
+      <h2>Your interests</h2>
+      <p class="small muted" style="margin:0 0 12px">Pick a few. The best rabbit holes are where they overlap.</p>
+      <div class="chips">${chips}</div>
+      <form data-form="interest" class="inline" style="margin-top:14px">
+        <label class="sr" for="new-interest">Add your own interest</label>
+        <input id="new-interest" name="interest" type="text" placeholder="Add your own, e.g. Volcanoes" autocomplete="off">
+        <button class="btn btn-soft" type="submit">Add</button>
+      </form>
+    </section>`;
+}
+
+function homeView() {
+  const hasKey = !!S.key;
+  const standalone = isStandalone();
+  const install = !standalone && !S.installDismissed ? `
+    <div class="card notice">
+      <strong>Add Rabbit Hole to your Home Screen</strong>
+      <p style="margin:6px 0 10px">In Chrome, tap the <b>Share</b> icon in the address bar, then <b>Add to Home Screen</b>. In Safari, tap <b>Share › Add to Home Screen</b>. Then open it from the icon. The installed app keeps its own storage, so add your key there.</p>
+      <button class="linkbtn" data-action="dismiss-install">Got it</button>
+    </div>` : "";
+
+  const setup = !hasKey ? `
+    <section class="card">
+      <h2>One-time setup</h2>
+      <p class="muted">Rabbit Hole uses Google's Gemini to write its stories. Its free tier needs no credit card. Get a free key, then paste it here.</p>
+      <div class="stack">
+        <a class="btn btn-soft" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get a free key from Google AI Studio</a>
+        <form data-form="key" class="inline">
+          <label class="sr" for="setup-key">Gemini API key</label>
+          <input id="setup-key" name="key" type="password" placeholder="Paste your key" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <button class="btn btn-primary" type="submit">Save</button>
+        </form>
+        ${!standalone ? '<p class="small muted">Tip: add the app to your Home Screen first, then paste your key in the installed app.</p>' : ""}
+      </div>
+    </section>` : "";
+
+  const generate = hasKey ? `
+    <section class="card hero">
+      ${LOGO_ART}
+      <h2>Today's rabbit hole</h2>
+      <p class="muted">A true story from Wikipedia, found where your interests meet, in a 5 to 10 minute read.</p>
+      <div data-job="home">${jobSlotHTML("home")}</div>
+    </section>` : "";
+
+  const list = reads.length
+    ? `<ul class="reads">${reads.map((r) => `
+        <li><a class="read-item" href="#read/${esc(r.id)}">
+          ${r.imageURL ? `<img class="thumb" src="${esc(r.imageURL)}" alt="" loading="lazy">` : `<div class="thumb blank">${ICONS.book}</div>`}
+          <div style="flex:1">
+            <div class="t">${r.isRead ? "" : '<span class="dot" aria-label="Unread"></span>'}<span>${esc(r.title)}</span></div>
+            <div class="s">${esc(r.articleTitle)} · ${minutesOf(r)} min · ${fmtDate(r.createdAt)}</div>
+          </div>
+        </a></li>`).join("")}</ul>`
+    : `<div class="empty">Nothing here yet. Tap the button above to fall into your first rabbit hole.</div>`;
+
+  return `
+    <header class="topbar">
+      <img class="logo" src="icon-192.png" alt="">
+      <h1>Rabbit Hole</h1>
+      <button class="iconbtn" data-action="go-settings" aria-label="Settings">${ICONS.gear}</button>
+    </header>
+    ${install}${setup}${generate}
+    ${interestsCard()}
+    <div class="section-title"><h3>Your rabbit holes</h3></div>
+    ${list}`;
+}
+
+function readerView(r) {
+  const connects = (r.connects || []).length
+    ? `<div class="connects">${r.connects.map((c) => `<span>${esc(c)}</span>`).join("")}</div>` : "";
+  const deeper = r.relatedTitles?.length ? `
+    <section class="card deeper">
+      <h2>Go deeper</h2>
+      <div class="stack">${r.relatedTitles.map((t) => `<button class="btn btn-soft" data-action="deeper" data-deeper data-title="${esc(t)}" ${job ? "disabled" : ""}>${ICONS.down} ${esc(t)}</button>`).join("")}</div>
+      <div data-job="reader" style="margin-top:10px">${jobSlotHTML("reader")}</div>
+    </section>` : "";
+  return `
+    <button class="back" data-action="go-home">${ICONS.back} Rabbit holes</button>
+    <article class="article">
+      ${r.imageURL ? `<img class="article-img" src="${esc(r.imageURL)}" alt="">` : ""}
+      ${connects}
+      <h1>${esc(r.title)}</h1>
+      ${r.teaser ? `<p class="teaser">${esc(r.teaser)}</p>` : ""}
+      <div class="meta"><span>${minutesOf(r)} min read</span><span>From “${esc(r.articleTitle)}”</span></div>
+      <div class="prose">
+        ${r.introduction.map((p) => `<p>${esc(p)}</p>`).join("")}
+        ${r.sections.map((s) => `<h2>${esc(s.heading)}</h2>${s.paragraphs.map((p) => `<p>${esc(p)}</p>`).join("")}`).join("")}
+        ${r.takeaway ? `<p class="takeaway">${esc(r.takeaway)}</p>` : ""}
+      </div>
+    </article>
+    <div id="end-of-read"></div>
+    ${deeper}
+    <div class="row2" style="margin-bottom:14px">
+      <button class="btn btn-line" data-action="share" data-id="${esc(r.id)}">${ICONS.share} Share</button>
+      <a class="btn btn-line" href="${esc(r.articleURL)}" target="_blank" rel="noopener">Full article</a>
+    </div>
+    <p class="attrib">Told by ${esc(MODELS[r.model] || r.model)} from the Wikipedia article “${esc(r.articleTitle)}” (CC BY-SA 4.0). AI writing can occasionally get details wrong, so check the article before quoting anything.</p>
+    ${r.note ? `<p class="note">${esc(r.note)}</p>` : ""}
+    <button class="btn btn-danger" style="margin-top:18px" data-action="delete" data-id="${esc(r.id)}">Delete this read</button>`;
+}
+
+function settingsView() {
+  const key = S.key;
+  const model = S.model;
+  const modelOptions = Object.entries(MODELS).map(([id, label]) => `<option value="${id}" ${id === model ? "selected" : ""}>${esc(label)}</option>`).join("")
+    + `<option value="__custom" ${MODELS[model] ? "" : "selected"}>Other model name…</option>`;
+  return `
+    <button class="back" data-action="go-home">${ICONS.back} Back</button>
+    <h1 style="font-size:28px;margin:4px 0 16px">Settings</h1>
+
+    <section class="card">
+      <h2>Gemini API key</h2>
+      <form data-form="key" class="stack">
+        <label class="sr" for="key">Gemini API key</label>
+        <input id="key" name="key" type="password" value="${esc(key)}" placeholder="Paste your key" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <div class="row2">
+          <button class="btn btn-primary" type="submit">Save</button>
+          <button class="btn btn-line" type="button" data-action="test-key">Test key</button>
+        </div>
+      </form>
+      <div id="key-result"></div>
+      <p class="small muted">Free from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>, no credit card. It's saved only in this app on this phone and sent only to Google. On the free tier, Google may use requests to improve its products.</p>
+    </section>
+
+    <section class="card">
+      <h2>AI model</h2>
+      <label class="sr" for="model">Model</label>
+      <select id="model" data-change="model">${modelOptions}</select>
+      <form data-form="custom-model" class="inline" style="margin-top:10px;${MODELS[model] ? "display:none" : ""}" id="custom-model-form">
+        <input name="model" type="text" value="${MODELS[model] ? "" : esc(model)}" placeholder="e.g. gemini-3.6-flash" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button class="btn btn-primary" type="submit">Use</button>
+      </form>
+      <p class="small muted">This model writes the stories. If it's busy or unavailable, Rabbit Hole retries once, then uses Gemini 3.5 Flash-Lite. (Flash-Lite always does the quick job of choosing the article.)</p>
+      ${S.lastModelIssue ? `<p class="small" style="color:var(--bad)">Last problem: ${esc(S.lastModelIssue)}</p>` : ""}
+    </section>
+
+    <section class="card">
+      <h2>Backup</h2>
+      <p class="small muted">Your reads are stored only on this phone. Save a backup file now and then, or to move to a new phone. The backup doesn't include your API key.</p>
+      <div class="row2">
+        <button class="btn btn-line" data-action="export">Save backup</button>
+        <label class="btn btn-line" for="import-file">Restore backup</label>
+      </div>
+      <input id="import-file" type="file" accept="application/json,.json" data-change="import" class="sr">
+      <p class="small muted" id="storage-status"></p>
+    </section>
+
+    <p class="small muted" style="text-align:center">Rabbit Hole · Articles from Wikipedia (CC BY-SA 4.0) · Stories by Google Gemini</p>`;
+}
+
+function render() {
+  const hash = location.hash;
+  if (hash.startsWith("#read/")) {
+    const r = reads.find((x) => x.id === decodeURIComponent(hash.slice(6)));
+    if (!r) { location.hash = ""; return; }
+    app.innerHTML = readerView(r);
+    window.scrollTo(0, 0);
+    observeEnd(r);
+  } else if (hash === "#settings") {
+    app.innerHTML = settingsView();
+    window.scrollTo(0, 0);
+    showStorageStatus();
+  } else {
+    app.innerHTML = homeView();
+  }
+}
+
+let endObserver = null;
+function observeEnd(r) {
+  endObserver?.disconnect();
+  const el = document.getElementById("end-of-read");
+  if (!el || r.isRead || !("IntersectionObserver" in window)) return;
+  endObserver = new IntersectionObserver(async (entries) => {
+    if (entries.some((e) => e.isIntersecting)) {
+      endObserver.disconnect();
+      r.isRead = true;
+      await DB.put(r).catch(() => {});
+    }
   });
+  endObserver.observe(el);
+}
+
+async function showStorageStatus() {
+  const el = document.getElementById("storage-status");
+  if (!el || !navigator.storage?.persisted) return;
+  const persisted = await navigator.storage.persisted().catch(() => false);
+  el.textContent = persisted
+    ? "This phone has agreed to keep Rabbit Hole's data permanently."
+    : isStandalone() ? "This phone hasn't promised permanent storage yet. Backups are a good idea."
+                     : "Open Rabbit Hole from your Home Screen for the most reliable storage.";
+}
+
+// ---------- Actions ----------
+async function shareRead(r) {
+  const text = [r.title, r.teaser, "", ...r.introduction, ...r.sections.flatMap((s) => ["", s.heading, ...s.paragraphs]),
+    "", r.takeaway, "", `From the Wikipedia article “${r.articleTitle}”: ${r.articleURL}`].join("\n");
+  try {
+    if (navigator.share) await navigator.share({ title: r.title, text });
+    else { await navigator.clipboard.writeText(text); alert("Copied to clipboard."); }
+  } catch (e) { if (e.name !== "AbortError") { try { await navigator.clipboard.writeText(text); alert("Copied to clipboard."); } catch {} } }
+}
+
+async function exportBackup() {
+  const data = JSON.stringify({ app: "rabbit-hole", version: 2, exportedAt: new Date().toISOString(),
+                                settings: { selected: S.selected, custom: S.custom, model: S.model }, reads }, null, 1);
+  const name = `rabbit-hole-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  const file = new File([data], name, { type: "application/json" });
+  try {
+    if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: "Rabbit Hole backup" }); return; }
+  } catch (e) { if (e.name === "AbortError") return; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(file);
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
+
+async function importBackup(file) {
+  try {
+    const data = JSON.parse(await file.text());
+    if (data.app !== "rabbit-hole" || !Array.isArray(data.reads)) throw new Error("not a Rabbit Hole backup");
+    let added = 0;
+    for (const r of data.reads) {
+      if (!r || !r.id || !Array.isArray(r.sections)) continue;
+      if (!reads.some((x) => x.id === r.id)) { reads.push(r); added++; }
+      await DB.put(r);
+    }
+    if (Array.isArray(data.settings?.selected)) S.selected = data.settings.selected;
+    if (Array.isArray(data.settings?.custom)) S.custom = data.settings.custom;
+    sortReads();
+    alert(`Restored ${added} read${added === 1 ? "" : "s"}.`);
+    render();
+  } catch (e) { alert(`Couldn't restore that file: ${e.message}`); }
+}
+
+async function testKey() {
+  const out = document.getElementById("key-result");
+  const input = document.getElementById("key");
+  if (input?.value.trim()) S.key = input.value;
+  if (!S.key) { out.innerHTML = '<p class="result-bad">Paste a key first.</p>'; return; }
+  out.innerHTML = '<div class="job"><div class="spinner"></div><div>Testing with ' + esc(MODELS[S.model] || S.model) + '…</div></div>';
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(S.model)}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": S.key },
+      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "Reply with just the word: ready" }] }] }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) out.innerHTML = `<p class="result-ok">✓ Your key works with ${esc(MODELS[S.model] || S.model)}.</p>`;
+    else out.innerHTML = `<p class="result-bad">${esc(friendlyGemini(new GeminiError(res.status, data.error?.message || "")))}<br><span class="small">(Google said: ${esc(data.error?.message || res.status)})</span></p>`;
+  } catch { out.innerHTML = '<p class="result-bad">Couldn\'t reach Google. Check your internet connection.</p>'; }
+}
+
+// Re-renders the interests card only, so the page doesn't jump.
+function refreshInterests() {
+  const card = document.getElementById("interests");
+  if (card) { card.outerHTML = interestsCard(); renderJobSlots(); } else render();
+}
+
+document.addEventListener("click", async (e) => {
+  const el = e.target.closest("[data-action]");
+  if (!el) return;
+  switch (el.dataset.action) {
+    case "find": startRead(); break;
+    case "surprise": startRead({ surprise: true }); break;
+    case "deeper": startRead({ title: el.dataset.title }); break;
+    case "cancel": job?.controller.abort(); break;
+    case "go-home": location.hash = ""; break;
+    case "go-settings": location.hash = "#settings"; break;
+    case "dismiss-install": S.installDismissed = true; render(); break;
+    case "toggle-interest": {
+      const label = el.dataset.label;
+      const set = new Set(S.selected);
+      set.has(label) ? set.delete(label) : set.add(label);
+      S.selected = allInterests().filter((l) => set.has(l));
+      refreshInterests();
+      break;
+    }
+    case "remove-custom": {
+      const label = el.dataset.label;
+      S.custom = S.custom.filter((l) => l !== label);
+      S.selected = S.selected.filter((l) => l !== label);
+      refreshInterests();
+      break;
+    }
+    case "test-key": testKey(); break;
+    case "export": exportBackup(); break;
+    case "share": { const r = reads.find((x) => x.id === el.dataset.id); if (r) shareRead(r); break; }
+    case "delete": {
+      const r = reads.find((x) => x.id === el.dataset.id);
+      if (r && confirm(`Delete “${r.title}”?`)) {
+        await DB.remove(r.id);
+        reads = reads.filter((x) => x.id !== r.id);
+        location.hash = "";
+      }
+      break;
+    }
+  }
+});
+
+document.addEventListener("submit", (e) => {
+  const form = e.target.closest("[data-form]");
+  if (!form) return;
+  e.preventDefault();
+  const kind = form.dataset.form;
+  if (kind === "key") {
+    const value = form.elements.key.value.trim();
+    S.key = value;
+    if (location.hash === "#settings") {
+      document.getElementById("key-result").innerHTML = value ? '<p class="result-ok">Saved.</p>' : '<p class="result-bad">Key removed.</p>';
+    } else render();
+  } else if (kind === "interest") {
+    const value = form.elements.interest.value.trim().slice(0, 40);
+    if (value) {
+      const existing = allInterests().find((l) => l.toLowerCase() === value.toLowerCase());
+      const label = existing || value;
+      if (!existing) S.custom = [...S.custom, label];
+      if (!S.selected.includes(label)) S.selected = [...S.selected, label];
+    }
+    refreshInterests();
+    document.getElementById("new-interest")?.focus();
+  } else if (kind === "custom-model") {
+    const value = form.elements.model.value.trim();
+    if (value) { S.model = value; render(); }
+  }
+});
+
+document.addEventListener("change", (e) => {
+  const el = e.target.closest("[data-change]");
+  if (!el) return;
+  if (el.dataset.change === "model") {
+    if (el.value === "__custom") document.getElementById("custom-model-form").style.display = "";
+    else { S.model = el.value; render(); }
+  } else if (el.dataset.change === "import" && el.files?.[0]) {
+    importBackup(el.files[0]);
+    el.value = "";
+  }
+});
+
+window.addEventListener("hashchange", render);
+
+// ---------- Start ----------
+(async () => {
+  try { reads = await DB.all() || []; sortReads(); } catch { reads = []; }
+  render();
+  if (isStandalone() && navigator.storage?.persist) navigator.storage.persist().catch(() => {});
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+})();
 }
 </script>
 </body>
