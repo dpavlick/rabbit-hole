@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#d9541e">
+<title>Rabbit Hole compatibility test</title>
+<style>
+  :root { color-scheme: light dark; --bg: #faf7f2; --card: #fff; --ink: #1d1a16; --muted: #6b645a; --line: #e6dfd4;
+          --accent: #d9541e; --ok: #1f8a4c; --bad: #c0362c; --warn: #b7791f; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #15120f; --card: #1f1b17; --ink: #f2ede6; --muted: #a59d92; --line: #342e27; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 26px; line-height: 1.15; margin: 0 0 6px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  label { display: block; font-weight: 600; margin-bottom: 6px; }
+  input[type=password] { width: 100%; font-size: 16px; padding: 12px; border-radius: 10px;
+                         border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+  .hint { font-size: 14px; color: var(--muted); margin: 8px 0 0; }
+  .hint a { color: var(--accent); }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 12px; padding: 14px 16px; min-height: 48px;
+           width: 100%; cursor: pointer; }
+  .primary { background: var(--accent); color: #fff; margin-top: 14px; }
+  .primary:disabled { opacity: .6; }
+  .secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); margin-top: 10px; }
+  #verdict { display: none; font-size: 18px; font-weight: 600; }
+  #verdict.ok { display: block; border-color: var(--ok); color: var(--ok); }
+  #verdict.bad { display: block; border-color: var(--bad); color: var(--bad); }
+  #verdict.warn { display: block; border-color: var(--warn); color: var(--warn); }
+  #verdict p { font-size: 15px; font-weight: 400; color: var(--ink); margin: 8px 0 0; }
+  .row { display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .row:first-child { border-top: 0; padding-top: 0; }
+  .icon { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+          font-size: 14px; font-weight: 700; color: #fff; background: var(--line); }
+  .icon.ok { background: var(--ok); } .icon.bad { background: var(--bad); } .icon.warn { background: var(--warn); }
+  .icon.run { background: var(--muted); }
+  .name { font-weight: 600; }
+  .detail { font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+  .preview { display: none; margin-top: 10px; gap: 12px; align-items: center; }
+  .preview img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; background: var(--line); }
+  .preview.show { display: flex; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Rabbit Hole compatibility test</h1>
+  <p class="sub">Checks that everything the web app needs works on this phone. It takes about 30 seconds.</p>
+
+  <div class="card">
+    <label for="key">Your Gemini API key</label>
+    <input id="key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste key here">
+    <p class="hint">Get one free at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. The key stays on this page and is only sent to Google. It isn't saved anywhere.</p>
+    <button class="primary" id="run">Run the test</button>
+  </div>
+
+  <div class="card" id="verdict"></div>
+
+  <div class="card" id="results">
+    <div class="row" id="t-wiki"><div class="icon">1</div><div><div class="name">Wikipedia: find an article</div><div class="detail">Not run yet</div>
+      <div class="preview" id="preview"><img id="thumb" alt=""><div class="detail" id="thumb-title"></div></div></div></div>
+    <div class="row" id="t-gemini"><div class="icon">2</div><div><div class="name">Gemini: write a summary</div><div class="detail">Not run yet</div></div></div>
+    <div class="row" id="t-storage"><div class="icon">3</div><div><div class="name">Saving on the phone</div><div class="detail">Not run yet</div></div></div>
+    <div class="row" id="t-extras"><div class="icon">4</div><div><div class="name">Extras (screen awake, offline)</div><div class="detail">Not run yet</div></div></div>
+  </div>
+
+  <button class="secondary" id="copy" hidden>Copy results to send to Claude</button>
+</main>
+
+<script>
+{
+  const MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite"];
+  const WIKI = "https://en.wikipedia.org/w/api.php";
+  const log = [];
+  const $ = (id) => document.getElementById(id);
+
+  function set(id, state, text) {
+    const row = $(id);
+    const icon = row.querySelector(".icon");
+    icon.className = "icon " + state;
+    icon.textContent = { ok: "✓", bad: "✕", warn: "!", run: "…" }[state] || icon.textContent;
+    row.querySelector(".detail").textContent = text;
+    log.push(`[${row.querySelector(".name").textContent}] ${state.toUpperCase()}: ${text}`);
+  }
+
+  function withTimeout(ms) {
+    const c = new AbortController();
+    setTimeout(() => c.abort(), ms);
+    return c.signal;
+  }
+
+  async function testWikipedia() {
+    set("t-wiki", "run", "Searching Wikipedia's Featured articles…");
+    const params = new URLSearchParams({
+      action: "query", list: "search", srsearch: 'volcano hastemplate:"Featured article"', srlimit: "20",
+      srnamespace: "0", format: "json", formatversion: "2", origin: "*",
+    });
+    try {
+      const res = await fetch(`${WIKI}?${params}`, { signal: withTimeout(20000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const hits = data.query?.search ?? [];
+      if (!hits.length) {
+        set("t-wiki", "warn", "Wikipedia answered, but the Featured-article search returned nothing. The app would fall back to plain search.");
+        return { ok: true, title: "Volcano" };
+      }
+      const title = hits[Math.floor(Math.random() * hits.length)].title;
+
+      const p2 = new URLSearchParams({
+        action: "query", prop: "pageimages|extracts", titles: title, piprop: "thumbnail", pithumbsize: "200",
+        explaintext: "1", exintro: "1", format: "json", formatversion: "2", origin: "*",
+      });
+      const res2 = await fetch(`${WIKI}?${p2}`, { signal: withTimeout(20000) });
+      const page = (await res2.json()).query?.pages?.[0];
+      if (page?.thumbnail?.source) {
+        $("thumb").src = page.thumbnail.source;
+        $("thumb-title").textContent = title;
+        $("preview").classList.add("show");
+      }
+      set("t-wiki", "ok", `Found ${hits.length} Featured articles about volcanoes. Picked “${title}”.`);
+      return { ok: true, title, intro: (page?.extract || "").slice(0, 3000) };
+    } catch (e) {
+      set("t-wiki", "bad", `Couldn't reach Wikipedia (${e.name}: ${e.message}). Check your internet connection and try again.`);
+      return { ok: false };
+    }
+  }
+
+  async function callGemini(model, key, prompt, keyInQuery) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent` +
+                (keyInQuery ? `?key=${encodeURIComponent(key)}` : "");
+    const headers = { "Content-Type": "application/json" };
+    if (!keyInQuery) headers["x-goog-api-key"] = key;
+    const body = {
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseJsonSchema: {
+          type: "object",
+          properties: { title: { type: "string" }, summary: { type: "string" } },
+          required: ["title", "summary"],
+        },
+      },
+    };
+    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal: withTimeout(60000) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(data.error?.message || `HTTP ${res.status}`);
+      err.status = res.status;
+      throw err;
+    }
+    const text = (data.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text || "").join("");
+    const start = text.indexOf("{"), end = text.lastIndexOf("}");
+    return JSON.parse(text.slice(start, end + 1));
+  }
+
+  async function testGemini(key, article) {
+    if (!key) {
+      set("t-gemini", "bad", "No API key entered. Paste your key above and run the test again.");
+      return { ok: false, reason: "nokey" };
+    }
+    const topic = article.title || "Volcano";
+    const prompt = `Write a catchy title and a two-sentence, friendly summary of the Wikipedia article "${topic}".` +
+                   (article.intro ? ` Use only this text:\n\n${article.intro}` : "");
+    let lastError = null;
+
+    for (const model of MODELS) {
+      for (const keyInQuery of [false, true]) {
+        set("t-gemini", "run", `Asking ${model}…`);
+        try {
+          const out = await callGemini(model, key, prompt, keyInQuery);
+          const how = keyInQuery ? " (using the key-in-address method)" : "";
+          set("t-gemini", "ok", `${model} replied${how}: “${out.title}” — ${out.summary}`);
+          return { ok: true, model, keyInQuery };
+        } catch (e) {
+          lastError = e;
+          if (e.status) break;            // Google answered with an error: the connection works, so don't retry the other method.
+          if (e.name === "AbortError") break;
+        }
+      }
+      if (lastError?.status && ![404, 429, 500, 503].includes(lastError.status)) break;
+    }
+
+    const e = lastError;
+    if (!e.status && e.name !== "AbortError") {
+      set("t-gemini", "bad", `The phone's browser blocked the request to Google before it was sent (${e.name}: ${e.message}). This is the "CORS" problem: the app would need the small free relay instead.`);
+      return { ok: false, reason: "cors" };
+    }
+    if (e.name === "AbortError") {
+      set("t-gemini", "warn", "Google didn't answer within 60 seconds. Try again on a stronger connection.");
+      return { ok: false, reason: "timeout" };
+    }
+    if (e.status === 400 && /api key/i.test(e.message) || e.status === 401 || e.status === 403) {
+      set("t-gemini", "warn", `Google rejected the key: ${e.message}. The connection works. Check you copied the whole key.`);
+      return { ok: false, reason: "key", connected: true };
+    }
+    if (e.status === 429) {
+      set("t-gemini", "warn", `Google answered but said you're over the free limit right now: ${e.message}. The connection works; wait a minute and retry.`);
+      return { ok: false, reason: "limit", connected: true };
+    }
+    set("t-gemini", "warn", `Google answered with an error (HTTP ${e.status}): ${e.message}. The connection works.`);
+    return { ok: false, reason: "other", connected: true };
+  }
+
+  async function testStorage() {
+    set("t-storage", "run", "Checking…");
+    const notes = [];
+    let ok = true;
+    try {
+      localStorage.setItem("rh-test", "1");
+      ok = localStorage.getItem("rh-test") === "1";
+      localStorage.removeItem("rh-test");
+      notes.push(ok ? "Local storage works." : "Local storage didn't keep data.");
+    } catch (e) { ok = false; notes.push(`Local storage unavailable (${e.name}).`); }
+
+    try {
+      await new Promise((resolve, reject) => {
+        const req = indexedDB.open("rh-test", 1);
+        req.onupgradeneeded = () => req.result.createObjectStore("s");
+        req.onsuccess = () => { req.result.close(); indexedDB.deleteDatabase("rh-test"); resolve(); };
+        req.onerror = () => reject(req.error);
+      });
+      notes.push("Database storage works.");
+    } catch (e) { ok = false; notes.push(`Database storage unavailable (${e?.name || "error"}).`); }
+
+    const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+    if (navigator.storage?.persist) {
+      try {
+        const persisted = await navigator.storage.persist();
+        notes.push(persisted ? "The phone agreed to keep data permanently." :
+          standalone ? "The phone didn't promise permanent storage yet (it decides over time)." :
+                       "Permanent storage is decided after you add the app to your Home Screen.");
+      } catch { notes.push("Couldn't ask for permanent storage."); }
+    }
+    notes.push(standalone ? "Running as a Home Screen app." : "Running in the browser (that's expected for this test).");
+    set("t-storage", ok ? "ok" : "bad", notes.join(" "));
+    return { ok };
+  }
+
+  async function testExtras() {
+    const notes = [];
+    notes.push("wakeLock" in navigator ? "Can keep the screen awake while a summary is written." :
+                                         "Can't keep the screen awake; the app would just offer a retry if interrupted.");
+    notes.push("serviceWorker" in navigator ? "Offline support is available." : "Offline support isn't available here.");
+    set("t-extras", "ok", notes.join(" "));
+  }
+
+  function verdict(wiki, gemini, storage) {
+    const v = $("verdict");
+    let cls, head, body;
+    if (wiki.ok && gemini.ok && storage.ok) {
+      cls = "ok"; head = "✓ Everything works. The Rabbit Hole web app will run on this phone.";
+      body = "Tap “Copy results” and paste them to Claude so it can build the full app.";
+    } else if (!wiki.ok) {
+      cls = "bad"; head = "Couldn't reach Wikipedia.";
+      body = "This is usually the internet connection. Try again on Wi-Fi. (If Wikipedia can't be reached, the Gemini result isn't meaningful either.)";
+    } else if (gemini.reason === "cors") {
+      cls = "bad"; head = "Gemini is blocked from web pages on this phone.";
+      body = "Not a dead end: the app needs a free relay (a Cloudflare Worker). Copy the results and send them to Claude.";
+    } else if (gemini.connected) {
+      cls = "warn"; head = "The connection to Gemini works, but this test didn't finish.";
+      body = "The important part (that the phone can reach Google) passed. See item 2 for what to fix, then run it again.";
+    } else if (!storage.ok) {
+      cls = "warn"; head = "Saving on the phone isn't working in this browser mode.";
+      body = "If you're in a private/incognito tab, open a normal tab and run the test again.";
+    } else {
+      cls = "warn"; head = "The test didn't finish."; body = "See the items below, then run it again.";
+    }
+    v.className = "card " + cls;
+    v.innerHTML = "";
+    v.append(head);
+    const p = document.createElement("p"); p.textContent = body; v.append(p);
+  }
+
+  $("run").addEventListener("click", async () => {
+    const btn = $("run");
+    btn.disabled = true; btn.textContent = "Testing…";
+    log.length = 0;
+    log.push(`Browser: ${navigator.userAgent}`, `Page: ${location.origin}`, `Time: ${new Date().toISOString()}`);
+    const key = $("key").value.trim();
+    const wiki = await testWikipedia();
+    const gemini = wiki.ok ? await testGemini(key, wiki) : await testGemini(key, {});
+    const storage = await testStorage();
+    await testExtras();
+    verdict(wiki, gemini, storage);
+    log.push(`Verdict: ${$("verdict").firstChild?.textContent || ""}`);
+    $("copy").hidden = false;
+    btn.disabled = false; btn.textContent = "Run the test again";
+  });
+
+  $("copy").addEventListener("click", async () => {
+    const text = log.join("\n");
+    try { await navigator.clipboard.writeText(text); $("copy").textContent = "Copied ✓"; }
+    catch { prompt("Copy these results:", text); }
+  });
+}
+</script>
+</body>
+</html>
