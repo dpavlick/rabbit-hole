@@ -75,7 +75,7 @@
              animation: spin .9s linear infinite; flex: none; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
-  .error { background: color-mix(in srgb, var(--bad) 10%, transparent); color: var(--bad); border-radius: 12px;
+  .error { white-space: pre-line; background: color-mix(in srgb, var(--bad) 10%, transparent); color: var(--bad); border-radius: 12px;
            padding: 10px 12px; font-size: 14px; margin-top: 12px; }
   .notice { background: var(--accent-soft); border-radius: 12px; padding: 12px; font-size: 14px; }
 
@@ -212,6 +212,8 @@ const S = {
   set model(v) { store.set("model", String(v || "").trim() || "gemini-3.8-flash"); },
   get lastModelIssue() { return store.get("lastModelIssue", ""); },
   set lastModelIssue(v) { store.set("lastModelIssue", v); },
+  get lastFailure() { return store.get("lastFailure", ""); },
+  set lastFailure(v) { store.set("lastFailure", v); },
   get installDismissed() { return store.get("installDismissed", false); },
   set installDismissed(v) { store.set("installDismissed", v); },
 };
@@ -274,7 +276,7 @@ function cleanArticle(text) {
     const i = t.indexOf(`\n== ${name} ==`);
     if (i >= 0) t = t.slice(0, i);
   }
-  return t.slice(0, 100000).trim();
+  return t.slice(0, 40000).trim(); // plenty for a story, and lighter on Gemini's free tier
 }
 
 async function fetchArticle(title, signal) {
@@ -435,7 +437,9 @@ function friendlyGemini(e) {
     return "Google didn't accept your API key. Check it in Settings (copy the whole key again).";
   if (e.status === 429) return "You've hit Gemini's free limit for the moment. Wait a minute (or until tomorrow) and try again.";
   if (e.status === 404) return `Google doesn't recognise that model (${m}). Pick a different model in Settings.`;
-  if ([500, 503, 504].includes(e.status))
+  if (e.status === 500) return `Google's server hit an internal error (500): ${m}`;
+  if (e.status === 504) return `Google took too long to answer (504): ${m}`;
+  if (e.status === 503)
     return "Google's AI servers are overloaded right now. rabbithole tried several times and every free model was busy. This usually passes within a few minutes, so try again shortly.";
   return `Gemini had a problem (error ${e.status}): ${m}`;
 }
@@ -486,30 +490,33 @@ async function findArticle(selected, seen, onStatus, signal) {
   throw new AppError("Couldn't find a good article this time. Try again.");
 }
 
-// Writes the story. If Google is busy, waits and retries each model, then moves down the list of
-// free fallback models, remembering why so it can be shown in the read and in Settings.
+// Writes the story. Tries each model once, moving straight to the next one if it's busy
+// (Gemini 3.8 Flash is often overloaded on the free tier), and only waits and retries
+// when every model is busy. Remembers why the chosen model was skipped.
 async function writeStory(article, interests, angle, onStatus, signal) {
   const job = { system: readInstructions(interests, angle),
                 prompt: `Article title: ${article.title}\n\n<article>\n${article.text}\n</article>`,
                 schema: READ_SCHEMA, hint: READ_HINT };
   const chosen = S.model;
-  const order = [...new Set([chosen, ...FALLBACK_MODELS])];
-  const WAITS = [6, 15]; // seconds to wait before the 2nd and 3rd try of the same model
+  const all = [...new Set([chosen, ...FALLBACK_MODELS])];
+  const ROUNDS = [0, 10, 25]; // seconds to wait before each round of attempts
   let note = "";
   let lastError = null;
+  const attempts = []; // every failure, shown to you if nothing works
+  const skipped = new Set(); // models that said "not found": don't try them again
 
-  for (let i = 0; i < order.length; i++) {
-    const model = order[i];
-    const name = MODELS[model] || model;
-    for (let t = 0; t <= WAITS.length; t++) {
+  for (let round = 0; round < ROUNDS.length; round++) {
+    if (ROUNDS[round]) {
+      for (let left = ROUNDS[round]; left > 0; left--) {
+        onStatus(`Every free model is busy right now. Trying again in ${left} s…`);
+        await sleep(1000, signal);
+      }
+    }
+    for (const model of all) {
+      if (skipped.has(model)) continue;
+      const name = MODELS[model] || model;
       try {
-        if (t > 0) {
-          for (let left = WAITS[t - 1]; left > 0; left--) {
-            onStatus(`Google is busy. Trying ${name} again in ${left} s…`);
-            await sleep(1000, signal);
-          }
-          onStatus(`Writing the story of “${article.title}”…`);
-        }
+        onStatus(`Writing the story of “${article.title}”${model === chosen ? "" : ` with ${name}`}…`);
         let draft = await geminiCall(model, job, signal);
         const n = draftWords(draft);
         if (n < WORDS.min || n > WORDS.max) {
@@ -524,25 +531,19 @@ async function writeStory(article, interests, angle, onStatus, signal) {
       } catch (e) {
         if (e.name === "AbortError" || !(e instanceof GeminiError)) throw e;
         lastError = e;
-        const busy = [500, 503, 504].includes(e.status);
-        const limited = e.status === 429;
-        // Busy: retry the same model after a pause. Rate-limited: one retry. Missing model: move on.
-        if (busy && t < WAITS.length) continue;
-        if (limited && t < 1) continue;
-        if ((busy || limited || e.status === 404) && i < order.length - 1) {
-          const next = MODELS[order[i + 1]] || order[i + 1];
-          if (model === chosen) {
-            note = `${name} wasn't available (${e.status}: ${e.message}), so a backup model wrote this one.`;
-            S.lastModelIssue = `${new Date().toLocaleString()}: ${model} → error ${e.status}: ${e.message}`;
-          }
-          onStatus(`${name} is busy. Switching to ${next}…`);
-          break;
+        attempts.push(`${name}: error ${e.status}, ${String(e.message).slice(0, 140)}`);
+        if (![404, 429, 500, 503, 504].includes(e.status)) throw new AppError(friendlyGemini(e));
+        if (e.status === 404) skipped.add(model);
+        if (model === chosen) {
+          note = `${name} was busy (${e.status}: ${e.message}), so a backup model wrote this one.`;
+          S.lastModelIssue = `${new Date().toLocaleString()}: ${model} → error ${e.status}: ${e.message}`;
         }
-        throw new AppError(friendlyGemini(e));
       }
     }
   }
-  throw new AppError(lastError ? friendlyGemini(lastError) : "Gemini couldn't write a story right now. Try again in a minute.");
+  const unique = [...new Set(attempts)];
+  S.lastFailure = `${new Date().toLocaleString()}\n${unique.join("\n")}`;
+  throw new AppError(`Every free model failed to write the story. Here's what Google said:\n${unique.map((a) => "• " + a).join("\n")}\n\nSettings › Check models can help pin this down.`);
 }
 
 function draftWords(d) {
@@ -796,8 +797,11 @@ function settingsView() {
         <input name="model" type="text" value="${MODELS[model] ? "" : esc(model)}" placeholder="e.g. gemini-3.8-flash" autocomplete="off" autocapitalize="off" spellcheck="false">
         <button class="btn btn-primary" type="submit">Use</button>
       </form>
-      <p class="small muted">This model writes the stories. If Google is busy, rabbithole waits and retries, then switches to Flash-Lite and finally a backup model, all free. (Flash-Lite always does the quick job of choosing the article.)</p>
+      <p class="small muted">This model writes the stories. If it's busy, rabbithole switches straight to Flash-Lite, then a backup model (all free), and only waits if every model is busy. Gemini 3.8 Flash writes best but is often overloaded and allows only about 20 free stories a day; Flash-Lite is more reliable. (Flash-Lite always does the quick job of choosing the article.)</p>
       ${S.lastModelIssue ? `<p class="small" style="color:var(--bad)">Last problem: ${esc(S.lastModelIssue)}</p>` : ""}
+      <button class="btn btn-line" style="margin-top:12px" data-action="check-models">Check models</button>
+      <p class="small muted">Sends a tiny request and a short practice story to each free model and shows exactly what Google answers.</p>
+      <div id="check-result"></div>
     </section>
 
     <section class="card">
@@ -918,6 +922,42 @@ async function testKey() {
   } catch { out.innerHTML = '<p class="result-bad">Couldn\'t reach Google. Check your internet connection.</p>'; }
 }
 
+// Diagnostics: a tiny request and a short structured "practice story" to each model.
+async function checkModels() {
+  const out = document.getElementById("check-result");
+  if (!S.key) { out.innerHTML = '<p class="result-bad">Save your API key first.</p>'; return; }
+  const sample = "The Great Molasses Flood happened in Boston on January 15, 1919, when a storage tank burst and a wave of molasses rushed through the streets. " +
+                 "It killed 21 people and injured about 150. Investigations blamed the tank's weak construction, and the disaster led to stricter building rules for engineering projects.";
+  const lines = [];
+  const show = (done) => {
+    out.innerHTML = `<pre class="small" style="white-space:pre-wrap;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px;margin:12px 0 8px">${esc(lines.join("\n"))}</pre>`
+      + (done ? '<button class="btn btn-soft" data-action="copy-check">Copy results</button>' : '<div class="job"><div class="spinner"></div><div>Checking…</div></div>');
+  };
+  lines.push(`Checked ${new Date().toLocaleString()}`);
+  if (S.lastFailure) lines.push("", "Last failed story:", S.lastFailure);
+  lines.push("");
+  show(false);
+  for (const model of Object.keys(MODELS)) {
+    const name = MODELS[model];
+    for (const [label, job] of [
+      ["tiny request", { system: "Answer briefly.", prompt: "Reply with just the word: ready", schema: { type: "object", properties: { word: { type: "string" } }, required: ["word"] }, hint: 'Reply with only {"word": "..."}' }],
+      ["practice story", { system: readInstructions(["History", "Engineering"], "").replace(/between 1,500 and 2,100 words[^.]*\./, "about 150 words."),
+                           prompt: `Article title: Great Molasses Flood\n\n<article>\n${sample}\n</article>`, schema: READ_SCHEMA, hint: READ_HINT }],
+    ]) {
+      const t0 = performance.now();
+      try {
+        const outJson = await geminiCall(model, job, undefined);
+        lines.push(`✓ ${name}, ${label}: OK in ${((performance.now() - t0) / 1000).toFixed(1)} s${outJson.title ? ` (“${String(outJson.title).slice(0, 50)}”)` : ""}`);
+      } catch (e) {
+        lines.push(`✕ ${name}, ${label}: ${e instanceof GeminiError ? `error ${e.status}, ${String(e.message).slice(0, 160)}` : e.message}`);
+      }
+      show(false);
+    }
+  }
+  show(true);
+  out.dataset.text = lines.join("\n");
+}
+
 // Re-renders the interests card only, so the page doesn't jump.
 function refreshInterests() {
   const card = document.getElementById("interests");
@@ -951,6 +991,12 @@ document.addEventListener("click", async (e) => {
       break;
     }
     case "test-key": testKey(); break;
+    case "check-models": checkModels(); break;
+    case "copy-check": {
+      const text = document.getElementById("check-result")?.dataset.text || "";
+      try { await navigator.clipboard.writeText(text); el.textContent = "Copied ✓"; } catch { prompt("Copy these results:", text); }
+      break;
+    }
     case "export": exportBackup(); break;
     case "share": { const r = reads.find((x) => x.id === el.dataset.id); if (r) shareRead(r); break; }
     case "delete": {

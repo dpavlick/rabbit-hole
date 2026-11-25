@@ -2,7 +2,7 @@
 // - The app's own files: network first (so updates show up right away), cached copy when offline.
 // - Wikipedia article images: cached after first view, so saved reads keep their pictures offline.
 // - Calls to Wikipedia's API and to Gemini are never touched.
-const APP_CACHE = "rh-app-v9";
+const APP_CACHE = "rh-app-v11";
 const IMAGE_CACHE = "rh-images";
 const APP_FILES = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png", "./logo-mark.png"];
 
