@@ -158,10 +158,11 @@ const CATEGORIES = [
 ];
 const DEFAULT_SELECTED = ["Healthcare", "Medicine", "Biology", "Technology", "Science"];
 const MODELS = {
-  "gemini-3.8-flash": "Gemini 3.8 Flash (best writing)",
-  "gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite (fastest)",
+  "gemini-3.8-flash": "Gemini 3.8 Flash (main writer)",
+  "gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite (fallback)",
   "gemini-3.1-flash-lite": "Gemini 3.1 Flash-Lite (backup)",
 };
+const DEFAULT_MODEL = "gemini-3.8-flash";
 const FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]; // all on Gemini's free tier
 const PICKER_MODEL = "gemini-3.5-flash-lite"; // choosing the article is a small job; saves Flash quota for writing
 const WORDS = { min: 1200, target: 1800, max: 2400 }; // 5–10 minutes at ~240 words a minute
@@ -208,8 +209,8 @@ const S = {
   set selected(v) { store.set("selected", v); },
   get custom() { return store.get("custom", []); },
   set custom(v) { store.set("custom", v); },
-  get model() { return store.get("model", "gemini-3.8-flash"); },
-  set model(v) { store.set("model", String(v || "").trim() || "gemini-3.8-flash"); },
+  get model() { return store.get("model3", DEFAULT_MODEL); },
+  set model(v) { store.set("model3", String(v || "").trim() || DEFAULT_MODEL); },
   get lastModelIssue() { return store.get("lastModelIssue", ""); },
   set lastModelIssue(v) { store.set("lastModelIssue", v); },
   get lastFailure() { return store.get("lastFailure", ""); },
@@ -490,60 +491,138 @@ async function findArticle(selected, seen, onStatus, signal) {
   throw new AppError("Couldn't find a good article this time. Try again.");
 }
 
-// Writes the story. Tries each model once, moving straight to the next one if it's busy
-// (Gemini 3.8 Flash is often overloaded on the free tier), and only waits and retries
-// when every model is busy. Remembers why the chosen model was skipped.
-async function writeStory(article, interests, angle, onStatus, signal) {
-  const job = { system: readInstructions(interests, angle),
-                prompt: `Article title: ${article.title}\n\n<article>\n${article.text}\n</article>`,
-                schema: READ_SCHEMA, hint: READ_HINT };
-  const chosen = S.model;
-  const all = [...new Set([chosen, ...FALLBACK_MODELS])];
-  const ROUNDS = [0, 10, 25]; // seconds to wait before each round of attempts
-  let note = "";
-  let lastError = null;
-  const attempts = []; // every failure, shown to you if nothing works
-  const skipped = new Set(); // models that said "not found": don't try them again
+// ---------- Writing the story in small pieces ----------
+// Google's free tier turns away big, long requests when it's busy but lets small ones through,
+// so the story is written as one short "plan" request plus one short request per section,
+// each with a trimmed copy of the article.
 
-  for (let round = 0; round < ROUNDS.length; round++) {
-    if (ROUNDS[round]) {
-      for (let left = ROUNDS[round]; left > 0; left--) {
-        onStatus(`Every free model is busy right now. Trying again in ${left} s…`);
-        await sleep(1000, signal);
-      }
+// The parts of the article most likely to hold the story: the opening plus history-type sections.
+function storyExcerpt(text, max = 14000) {
+  const parts = text.split(/\n(?===+ )/);
+  const lead = parts.shift() || "";
+  const storyish = /history|background|origin|founding|creation|develop|discover|invent|early|beginning|controvers|scandal|disaster|incident|investigat|legacy|impact|aftermath|reception|death|trial|reform/i;
+  const ranked = parts.map((p, i) => ({ p, i, score: storyish.test(p.split("\n")[0]) ? 0 : 1 }))
+                      .sort((a, b) => a.score - b.score || a.i - b.i);
+  const keep = [];
+  let used = Math.min(lead.length, 4000);
+  for (const r of ranked) {
+    if (used + r.p.length > max) { if (r.score === 0 && used < max - 1500) { keep.push({ ...r, p: r.p.slice(0, max - used) }); used = max; } continue; }
+    keep.push(r); used += r.p.length;
+  }
+  keep.sort((a, b) => a.i - b.i);
+  return [lead.slice(0, 4000), ...keep.map((k) => k.p)].join("\n").trim();
+}
+
+function storyStyle(interests, angle) {
+  const interestLine = interests.length
+    ? `The reader is into: ${interests.join(", ")}. Where the article supports it, draw out how this story connects those fields.`
+    : "The reader is curious about everything.";
+  return `You write for rabbithole, an app that turns Wikipedia articles into gripping true stories for curious people. Write like a great magazine storyteller who is also a smart, warm friend: vivid, clear, a little playful, never stuffy. Explain jargon in plain words.
+
+Turn the topic into a story, not a summary. Don't describe what the thing is or does; find the narrative behind it: why it came to exist, the problem, crisis, accident, rivalry or bold idea that started it, the people involved, what went wrong, the turning point, and what it changed. For example, the Wikipedia article on the FDA is a dry description of an agency, but the story of how deadly patent medicines and a poisoning scandal forced its creation is gripping. If the article has little history, build the story around whatever tension, mystery or stakes it does contain.
+
+${interestLine}
+${angle ? `Suggested story angle: ${angle}` : ""}
+
+Rules: use only facts stated in the article, with names, dates and numbers exactly right. Never invent scenes, quotes, dialogue, motives or details, and never add outside knowledge. Plain text only: no markdown, no bullet points, no emoji.`;
+}
+
+const PLAN_SCHEMA = {
+  type: "object",
+  properties: {
+    title: { type: "string", description: "A story-style title with a hook." },
+    teaser: { type: "string", description: "One sentence that sets up the story." },
+    introduction: { type: "array", items: { type: "string" }, description: "One or two opening paragraphs (about 150 words in total): a hook moment, problem or question, not a definition." },
+    sections: { type: "array", items: { type: "object", properties: {
+      heading: { type: "string", description: "A short, inviting heading specific to this story." },
+      covers: { type: "string", description: "Two or three sentences: which events and facts from the article this section tells." } },
+      required: ["heading", "covers"] }, description: "4 to 6 sections that form a story arc." },
+    takeaway: { type: "string", description: "A closing paragraph of about 90 words: why this story still matters." },
+  },
+  required: ["title", "teaser", "introduction", "sections", "takeaway"],
+};
+const PLAN_HINT = "Reply with only a JSON object with keys: title, teaser, introduction (array of strings), sections (array of {heading, covers}), takeaway.";
+const SECTION_SCHEMA = { type: "object", properties: { paragraphs: { type: "array", items: { type: "string" } } }, required: ["paragraphs"] };
+const SECTION_HINT = 'Reply with only a JSON object: {"paragraphs": ["...", "..."]}.';
+
+// Sends one small request, trying each free model and retrying briefly if they're all busy.
+async function resilientCall(job, onStatus, signal, label) {
+  const chosen = S.model;
+  const order = [...new Set([chosen, ...FALLBACK_MODELS])];
+  const WAITS = [0, 5, 12, 25];
+  const skipped = new Set();
+  const failures = [];
+  let lastError = null;
+  for (const wait of WAITS) {
+    for (let left = wait; left > 0; left--) {
+      onStatus(`Google is busy. ${label}: trying again in ${left} s…`);
+      await sleep(1000, signal);
     }
-    for (const model of all) {
+    for (const model of order) {
       if (skipped.has(model)) continue;
-      const name = MODELS[model] || model;
       try {
-        onStatus(`Writing the story of “${article.title}”${model === chosen ? "" : ` with ${name}`}…`);
-        let draft = await geminiCall(model, job, signal);
-        const n = draftWords(draft);
-        if (n < WORDS.min || n > WORDS.max) {
-          onStatus("Adjusting the length…");
-          const fix = n < WORDS.min
-            ? `Your previous version was only ${n} words, too short for a 5 to 10 minute read. Write it again at about ${WORDS.target} words, digging deeper into the article's story.`
-            : `Your previous version was ${n} words, longer than a 10 minute read. Write it again at about ${WORDS.target} words, keeping the strongest parts of the story.`;
-          try { draft = await geminiCall(model, { ...job, prompt: job.prompt + "\n\n" + fix }, signal); } catch (e) { if (e.name === "AbortError") throw e; }
-        }
-        if (model === chosen) S.lastModelIssue = "";
-        return { draft, model, note };
+        onStatus(`${label}…`);
+        const out = await geminiCall(model, job, signal);
+        return { out, model, failures };
       } catch (e) {
         if (e.name === "AbortError" || !(e instanceof GeminiError)) throw e;
         lastError = e;
-        attempts.push(`${name}: error ${e.status}, ${String(e.message).slice(0, 140)}`);
+        failures.push(`${MODELS[model] || model}: error ${e.status}, ${String(e.message).slice(0, 140)}`);
         if (![404, 429, 500, 503, 504].includes(e.status)) throw new AppError(friendlyGemini(e));
         if (e.status === 404) skipped.add(model);
-        if (model === chosen) {
-          note = `${name} was busy (${e.status}: ${e.message}), so a backup model wrote this one.`;
-          S.lastModelIssue = `${new Date().toLocaleString()}: ${model} → error ${e.status}: ${e.message}`;
-        }
       }
     }
   }
-  const unique = [...new Set(attempts)];
-  S.lastFailure = `${new Date().toLocaleString()}\n${unique.join("\n")}`;
-  throw new AppError(`Every free model failed to write the story. Here's what Google said:\n${unique.map((a) => "• " + a).join("\n")}\n\nSettings › Check models can help pin this down.`);
+  const unique = [...new Set(failures)];
+  S.lastFailure = `${new Date().toLocaleString()} (${label})\n${unique.join("\n")}`;
+  throw new AppError(`Every free model failed while ${label.toLowerCase()}. Here's what Google said:\n${unique.map((a) => "• " + a).join("\n")}\n\nThis is Google's free tier being overloaded. Try again in a few minutes.`);
+}
+
+async function writeStory(article, interests, angle, onStatus, signal) {
+  const style = storyStyle(interests, angle);
+  const excerpt = storyExcerpt(article.text);
+  const source = `Article title: ${article.title}\n\n<article>\n${excerpt}\n</article>`;
+  const usedModels = new Set();
+  const chosenFailures = new Set();
+  const track = (r) => {
+    usedModels.add(r.model);
+    r.failures.filter((f) => f.startsWith(MODELS[S.model] || S.model)).forEach((f) => chosenFailures.add(f));
+    return r.out;
+  };
+
+  // 1. Plan: title, teaser, introduction, section outline and takeaway (short output).
+  const plan = track(await resilientCall({
+    system: style + "\n\nFirst, plan the story. Write the title, teaser, introduction and takeaway in full, and outline 4 to 6 sections in story order.",
+    prompt: source, schema: PLAN_SCHEMA, hint: PLAN_HINT,
+  }, onStatus, signal, "Planning the story"));
+  const outline = (plan.sections || []).filter((x) => x && x.heading).slice(0, 6);
+  if (outline.length < 2) throw new AppError("Gemini's plan came back too thin. Give it another try.");
+
+  // 2. Each section on its own (short output each).
+  const introWords = words((plan.introduction || []).join(" ")) + words(plan.takeaway || "");
+  const perSection = Math.max(220, Math.min(420, Math.round((WORDS.target - introWords) / outline.length)));
+  const outlineText = outline.map((x, i) => `${i + 1}. ${x.heading}: ${x.covers}`).join("\n");
+  const sections = [];
+  let previous = (plan.introduction || []).slice(-1)[0] || "";
+  for (let i = 0; i < outline.length; i++) {
+    const sec = outline[i];
+    const out = track(await resilientCall({
+      system: style + `\n\nYou are writing one section of a longer story. Write only this section, in 2 to 5 paragraphs of 2 to 5 sentences each, about ${perSection} words. Continue smoothly from where the story left off. Don't repeat the introduction or earlier sections, don't add a heading, and don't wrap up the whole story unless this is the last section.`,
+      prompt: `${source}\n\nThe story's title: ${plan.title}\nThe story's outline:\n${outlineText}\n\nThe story so far ended with:\n"${previous}"\n\nNow write section ${i + 1} of ${outline.length}, "${sec.heading}", which covers: ${sec.covers}`,
+      schema: SECTION_SCHEMA, hint: SECTION_HINT,
+    }, onStatus, signal, `Writing part ${i + 1} of ${outline.length}`));
+    const paragraphs = (out.paragraphs || []).map((p) => String(p).trim()).filter(Boolean);
+    if (paragraphs.length) { sections.push({ heading: sec.heading, paragraphs }); previous = paragraphs[paragraphs.length - 1]; }
+  }
+
+  const backups = [...usedModels].filter((m) => m !== S.model);
+  const note = backups.length
+    ? `${MODELS[S.model] || S.model} was busy for part of this, so ${backups.map((m) => MODELS[m] || m).join(" and ")} helped write it.${chosenFailures.size ? ` (${[...chosenFailures][0]})` : ""}`
+    : "";
+  if (backups.length && chosenFailures.size) S.lastModelIssue = `${new Date().toLocaleString()}: ${[...chosenFailures][0]}`;
+  else if (!backups.length) S.lastModelIssue = "";
+  const mainModel = [...usedModels].sort((a, b) => (a === S.model ? -1 : b === S.model ? 1 : 0))[0];
+  return { draft: { title: plan.title, teaser: plan.teaser, introduction: plan.introduction, sections, takeaway: plan.takeaway }, model: mainModel, note };
 }
 
 function draftWords(d) {
@@ -580,7 +659,7 @@ async function startRead({ title = null, surprise = false } = {}) {
     } else {
       ({ article, angle, connects } = await findArticle(selected, seen, setStatus, signal));
     }
-    setStatus(`Writing the story of “${article.title}” (about 20–40 seconds)…`);
+    setStatus(`Planning the story of “${article.title}”…`);
     const { draft, model, note } = await writeStory(article, title ? S.selected : selected, angle, setStatus, signal);
     seen.add(article.title);
     const related = await relatedTitles(article.title, seen, signal).catch(() => []);
@@ -797,7 +876,7 @@ function settingsView() {
         <input name="model" type="text" value="${MODELS[model] ? "" : esc(model)}" placeholder="e.g. gemini-3.8-flash" autocomplete="off" autocapitalize="off" spellcheck="false">
         <button class="btn btn-primary" type="submit">Use</button>
       </form>
-      <p class="small muted">This model writes the stories. If it's busy, rabbithole switches straight to Flash-Lite, then a backup model (all free), and only waits if every model is busy. Gemini 3.8 Flash writes best but is often overloaded and allows only about 20 free stories a day; Flash-Lite is more reliable. (Flash-Lite always does the quick job of choosing the article.)</p>
+      <p class="small muted">This model writes the stories, in small pieces so Google's free tier accepts them. Whenever it's busy or out of free uses for the day, rabbithole switches to Flash-Lite for that piece, and only waits if every model is busy. (Flash-Lite always does the quick job of choosing the article.)</p>
       ${S.lastModelIssue ? `<p class="small" style="color:var(--bad)">Last problem: ${esc(S.lastModelIssue)}</p>` : ""}
       <button class="btn btn-line" style="margin-top:12px" data-action="check-models">Check models</button>
       <p class="small muted">Sends a tiny request and a short practice story to each free model and shows exactly what Google answers.</p>
