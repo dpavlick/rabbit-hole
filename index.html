@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="rabbithole">
-<meta name="description" content="True stories from Wikipedia, found where your interests overlap.">
+<meta name="description" content="Surprising true stories from Wikipedia, related to what you love.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" href="icon-192.png">
@@ -139,7 +139,7 @@
 'use strict';
 {
 // =====================================================================
-// rabbithole: finds Wikipedia articles where your interests overlap and
+// rabbithole: finds surprising Wikipedia articles related to your interests and
 // turns them into 5–10 minute stories, written by Gemini.
 // Everything runs in the browser. Wikipedia and Gemini are called directly.
 // Reads live in IndexedDB; settings (including your key) in localStorage.
@@ -147,15 +147,31 @@
 
 // ---------- Config ----------
 // label: what you see. q: the word used when searching Wikipedia.
+// label: what you see. q: a pool of search words; each search picks one at random for variety.
 const CATEGORIES = [
-  { label: "Healthcare", q: "health" }, { label: "Medicine", q: "medical" }, { label: "Biology", q: "biology" },
-  { label: "Technology", q: "technology" }, { label: "Science", q: "scientific" }, { label: "History", q: "history" },
-  { label: "Business", q: "company" }, { label: "Economics", q: "economic" }, { label: "Law & policy", q: "law" },
-  { label: "Engineering", q: "engineering" }, { label: "Space", q: "space" }, { label: "Psychology", q: "psychology" },
-  { label: "Environment", q: "environmental" }, { label: "Food", q: "food" }, { label: "Art & design", q: "art" },
-  { label: "Music", q: "music" }, { label: "Sports", q: "sport" }, { label: "Military history", q: "military" },
-  { label: "Philosophy", q: "philosophy" }, { label: "Geography", q: "geography" },
+  { label: "Healthcare", q: ["public health", "hospital", "health agency", "epidemic", "health insurance", "nursing", "sanitation"] },
+  { label: "Medicine", q: ["vaccine", "surgery", "drug", "disease", "antibiotic", "physician", "medical discovery", "anesthesia", "pandemic"] },
+  { label: "Biology", q: ["species", "evolution", "microbiology", "virus", "bacteria", "genetics", "ecology", "naturalist", "fossil"] },
+  { label: "Technology", q: ["invention", "computer", "satellite", "telescope", "telephone", "radio", "engine", "laboratory equipment", "software"] },
+  { label: "Science", q: ["discovery", "experiment", "physicist", "chemist", "scientist", "laboratory", "observatory", "theory"] },
+  { label: "History", q: ["history", "revolution", "empire", "expedition", "ancient", "war"] },
+  { label: "Business", q: ["company", "corporation", "entrepreneur", "brand", "monopoly"] },
+  { label: "Economics", q: ["economic", "market crash", "currency", "trade", "inflation"] },
+  { label: "Law & policy", q: ["act of congress", "legislation", "court case", "regulation", "treaty"] },
+  { label: "Engineering", q: ["bridge", "dam", "spacecraft", "tunnel", "aircraft", "skyscraper", "canal", "space station", "megaproject"] },
+  { label: "Space", q: ["space mission", "spacecraft", "astronaut", "space station", "telescope", "probe"] },
+  { label: "Psychology", q: ["psychology", "experiment", "behavior", "psychiatry", "memory"] },
+  { label: "Environment", q: ["environmental", "pollution", "climate", "conservation", "national park"] },
+  { label: "Food", q: ["food", "cuisine", "beverage", "crop", "spice"] },
+  { label: "Art & design", q: ["painting", "architecture", "design", "museum", "sculpture"] },
+  { label: "Music", q: ["music", "album", "composer", "instrument"] },
+  { label: "Sports", q: ["sport", "olympic", "championship", "athlete"] },
+  { label: "Military history", q: ["battle", "military", "warship", "siege"] },
+  { label: "Philosophy", q: ["philosophy", "philosopher", "ethics"] },
+  { label: "Geography", q: ["island", "river", "mountain", "city founded"] },
 ];
+// Words that tend to pull up articles with a story behind them.
+const STORY_WORDS = ["discovered", "invented", "founded", "established", "disaster", "expedition", "scandal", "first", "cost", "history"];
 const DEFAULT_SELECTED = ["Healthcare", "Medicine", "Biology", "Technology", "Science"];
 const MODELS = {
   "gemini-3.8-flash": "Gemini 3.8 Flash (main writer)",
@@ -223,7 +239,7 @@ const S = {
   set installDismissed(v) { store.set("installDismissed", v); },
 };
 const allInterests = () => [...CATEGORIES.map((c) => c.label), ...S.custom];
-const searchTerm = (label) => CATEGORIES.find((c) => c.label === label)?.q || label;
+const searchTerm = (label) => { const q = CATEGORIES.find((c) => c.label === label)?.q; return q ? pick(q) : label; };
 
 // ---------- Reads (IndexedDB) ----------
 const DB = {
@@ -299,9 +315,10 @@ async function fetchArticle(title, signal) {
   };
 }
 
-// Gathers candidate articles where your interests overlap.
-// Searches combinations of 3, 2 and 1 interests among Wikipedia's Featured and Good articles,
-// and remembers which interests each candidate matched.
+// Gathers a varied set of candidate articles related to your interests.
+// Mostly single-interest searches with varied words (sometimes with a "story" word like
+// "discovered" or "founded"), plus a couple of two-interest searches, all among Wikipedia's
+// Featured and Good articles. Overlap is welcome but not required.
 async function buildPool(selected, seen, signal) {
   const queries = [];
   if (!selected.length) {
@@ -309,21 +326,20 @@ async function buildPool(selected, seen, signal) {
     for (const f of QUALITY) queries.push({ q: f, labels: [], offset: randInt(0, 6000) });
     queries.push({ q: pick(QUALITY), labels: [], offset: randInt(0, 6000) });
   } else {
-    const combos = new Map();
-    const add = (labels) => { const key = labels.slice().sort().join("|"); if (!combos.has(key)) combos.set(key, labels); };
-    if (selected.length >= 3) for (let i = 0; i < 3; i++) add(shuffle(selected).slice(0, 3));
-    if (selected.length >= 2) for (let i = 0; i < 3; i++) add(shuffle(selected).slice(0, 2));
-    add([pick(selected)]);
-    for (const labels of [...combos.values()].slice(0, 7)) {
-      const q = labels.map(searchTerm).join(" ");
-      for (const f of QUALITY) queries.push({ q: `${q} ${f}`, labels, offset: labels.length === 1 ? randInt(0, 120) : 0 });
+    for (const label of shuffle(selected).slice(0, 5)) {
+      queries.push({ q: `${searchTerm(label)} ${pick(QUALITY)}`, labels: [label], offset: randInt(0, 150) });
+      queries.push({ q: `${searchTerm(label)} ${pick(STORY_WORDS)} ${pick(QUALITY)}`, labels: [label], offset: randInt(0, 40) });
+    }
+    if (selected.length >= 2) for (let i = 0; i < 2; i++) {
+      const pair = shuffle(selected).slice(0, 2);
+      queries.push({ q: `${searchTerm(pair[0])} ${searchTerm(pair[1])} ${pick(QUALITY)}`, labels: pair, offset: 0 });
     }
   }
 
   const results = await Promise.all(queries.map(async ({ q, labels, offset }) => {
     let r = await search(q, offset, signal).catch((e) => { if (e.name === "AbortError") throw e; return { hits: [] }; });
     if (!r.hits.length && offset) r = await search(q, 0, signal).catch((e) => { if (e.name === "AbortError") throw e; return { hits: [] }; });
-    return r.hits.map((h) => ({ ...h, labels }));
+    return shuffle(r.hits).slice(0, 8).map((h) => ({ ...h, labels })); // a few from each search, so no single search dominates
   }));
 
   const byTitle = new Map();
@@ -331,19 +347,19 @@ async function buildPool(selected, seen, signal) {
     if (seen.has(h.title) || isJunkTitle(h.title) || (h.wordcount || 0) < 1500) continue;
     const prev = byTitle.get(h.title);
     if (prev) prev.labels = [...new Set([...prev.labels, ...h.labels])];
-    else byTitle.set(h.title, { title: h.title, snippet: plainText(h.snippet).slice(0, 220), labels: [...h.labels] });
+    else byTitle.set(h.title, { title: h.title, snippet: plainText(h.snippet).slice(0, 200), labels: [...h.labels] });
   }
-  let pool = shuffle([...byTitle.values()]).sort((a, b) => b.labels.length - a.labels.length);
+  let pool = shuffle([...byTitle.values()]);
 
-  // Niche interests with few rated articles: fall back to all articles on each topic.
+  // Interests with few rated articles: fall back to all articles on each topic.
   if (pool.length < 5 && selected.length) {
     for (const label of selected) {
       const { hits } = await search(searchTerm(label), randInt(0, 50), signal).catch((e) => { if (e.name === "AbortError") throw e; return { hits: [] }; });
       for (const h of hits) if (!seen.has(h.title) && !isJunkTitle(h.title) && !byTitle.has(h.title))
-        { byTitle.set(h.title, 1); pool.push({ title: h.title, snippet: plainText(h.snippet).slice(0, 220), labels: [label] }); }
+        { byTitle.set(h.title, 1); pool.push({ title: h.title, snippet: plainText(h.snippet).slice(0, 200), labels: [label] }); }
     }
   }
-  return pool.slice(0, 30);
+  return pool.slice(0, 36);
 }
 
 async function relatedTitles(title, seen, signal) {
@@ -371,7 +387,7 @@ const PICK_SCHEMA = {
   type: "object",
   properties: {
     number: { type: "integer", description: "The number of the chosen candidate." },
-    connects: { type: "array", items: { type: "string" }, description: "Which of the reader's interests this story genuinely connects." },
+    connects: { type: "array", items: { type: "string" }, description: "Which of the reader's interests this story genuinely relates to (one or more)." },
     storyAngle: { type: "string", description: "One sentence: the story to tell, e.g. how or why it came to be." },
   },
   required: ["number", "connects", "storyAngle"],
@@ -451,16 +467,21 @@ function friendlyGemini(e) {
 
 // Asks Gemini to choose the candidate that spans the most interests and has the best story.
 async function pickStory(pool, selected, signal) {
-  const list = pool.map((c, i) => `${i + 1}. ${c.title} | matched: ${c.labels.join(", ") || "none"} | ${c.snippet}`).join("\n");
+  const list = pool.map((c, i) => `${i + 1}. ${c.title} | found via: ${c.labels.join(", ") || "anything"} | ${c.snippet}`).join("\n");
+  const recent = reads.slice(0, 10).map((r) => r.articleTitle);
   const job = {
     system: "You choose the next article for a curious reader of rabbithole, an app that turns Wikipedia articles into true stories.",
     prompt: `${selected.length ? `The reader's interests: ${selected.join(", ")}.` : "The reader is curious about everything."}
 
-Pick the ONE candidate that:
-1. connects as many of the reader's interests as possible (a topic that sits where medicine meets law and business beats one that touches a single field), and
-2. has the best story behind it: an origin, a crisis, a scandal, a rivalry, a bold invention, a turning point, unexpected consequences. Prefer topics where "how or why did this come to be?" is fascinating over dry descriptions, rankings or catalogues.
+Pick the ONE candidate with the most fascinating true story behind it that is clearly related to at least one of the reader's interests. Think of the kind of thing a curious person would love to discover by accident: how penicillin was discovered, why the International Space Station cost so much, how the National Institutes of Health was formed.
 
-Candidates (title | interests its search matched | snippet):
+Prefer:
+- a specific thing with a story (a discovery, an invention, an institution's founding, a disaster, an expedition, a megaproject, a scandal, a person's breakthrough) over a broad field or overview topic (for example, "Penicillin" or "Elixir Sulfanilamide disaster" over "Genetic engineering" or "Biotechnology");
+- topics where "how or why did this come to be?" has a surprising answer;
+- variety: something different in subject and theme from the reader's recent reads.
+Touching several of the reader's interests is a nice bonus, but never required.
+
+${recent.length ? `The reader's recent reads (choose something on a different theme): ${recent.join("; ")}\n\n` : ""}Candidates (title | interest it was found through | snippet):
 ${list}`,
     schema: PICK_SCHEMA,
     hint: PICK_HINT,
@@ -475,11 +496,11 @@ ${list}`,
       if (e instanceof GeminiError && ![404, 429, 500, 503, 504].includes(e.status)) throw new AppError(friendlyGemini(e));
     }
   }
-  return null; // fall back to the candidate that matched the most interests
+  return null; // fall back to the candidates in random order
 }
 
 async function findArticle(selected, seen, onStatus, signal) {
-  onStatus(selected.length ? "Looking where your interests overlap…" : "Rummaging through Wikipedia's best articles…");
+  onStatus(selected.length ? "Exploring Wikipedia around your interests…" : "Rummaging through Wikipedia's best articles…");
   const pool = await buildPool(selected, seen, signal);
   if (!pool.length) throw new AppError("Couldn't find articles for those interests. Try selecting different or broader ones.");
   onStatus("Choosing the best story…");
@@ -766,7 +787,7 @@ function jobSlotHTML(context) {
       <button class="btn btn-primary" data-action="find">${ICONS.dice} Find me a rabbit hole</button>
       <button class="btn btn-soft" data-action="surprise">${ICONS.spark} Surprise me (any topic)</button>
     </div>
-    <p class="small muted" style="margin:10px 0 0">${n ? `Looking where ${n === 1 ? "your interest" : `your ${n} interests`} overlap.` : "No interests selected, so you'll get a story about anything."}</p>${err}`;
+    <p class="small muted" style="margin:10px 0 0">${n ? `Exploring around ${n === 1 ? "your interest" : `your ${n} interests`}.` : "No interests selected, so you'll get a story about anything."}</p>${err}`;
   }
   return err;
 }
@@ -793,7 +814,7 @@ function interestsCard() {
   return `
     <section class="card" id="interests">
       <h2>Your interests</h2>
-      <p class="small muted" style="margin:0 0 12px">Pick a few. The best rabbit holes are where they overlap.</p>
+      <p class="small muted" style="margin:0 0 12px">Pick a few. Stories can come from anywhere around them, and the best ones sometimes touch several.</p>
       <div class="chips">${chips}</div>
       <form data-form="interest" class="inline" style="margin-top:14px">
         <label class="sr" for="new-interest">Add your own interest</label>
@@ -831,7 +852,7 @@ function homeView() {
   const generate = hasKey ? `
     <section class="card hero">
       <h2>Today's rabbit hole</h2>
-      <p class="muted">A true story from Wikipedia, found where your interests meet, in a 5 to 10 minute read.</p>
+      <p class="muted">A surprising true story from Wikipedia, related to your interests, in a 5 to 10 minute read.</p>
       <div data-job="home">${jobSlotHTML("home")}</div>
     </section>` : "";
 
