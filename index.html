@@ -215,6 +215,10 @@ const S = {
   set lastModelIssue(v) { store.set("lastModelIssue", v); },
   get lastFailure() { return store.get("lastFailure", ""); },
   set lastFailure(v) { store.set("lastFailure", v); },
+  get pending() { return store.get("pending", null); },          // a story that's partly written
+  set pending(v) { store.set("pending", v); },
+  get exhausted() { return store.get("exhausted", {}); },        // model → time its daily free allowance resets
+  set exhausted(v) { store.set("exhausted", v); },
   get installDismissed() { return store.get("installDismissed", false); },
   set installDismissed(v) { store.set("installDismissed", v); },
 };
@@ -546,10 +550,22 @@ const SECTION_SCHEMA = { type: "object", properties: { paragraphs: { type: "arra
 const SECTION_HINT = 'Reply with only a JSON object: {"paragraphs": ["...", "..."]}.';
 
 // Sends one small request, trying each free model and retrying briefly if they're all busy.
+// Gemini's free daily allowances reset at midnight Pacific time; 08:00 UTC is a safe stand-in.
+function nextQuotaReset() {
+  const now = new Date();
+  const reset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 8));
+  if (reset <= now) reset.setUTCDate(reset.getUTCDate() + 1);
+  return reset.getTime();
+}
+const isExhausted = (model) => (S.exhausted[model] || 0) > Date.now();
+function markExhausted(model) { const x = S.exhausted; x[model] = nextQuotaReset(); S.exhausted = x; }
+
 async function resilientCall(job, onStatus, signal, label) {
   const chosen = S.model;
-  const order = [...new Set([chosen, ...FALLBACK_MODELS])];
-  const WAITS = [0, 5, 12, 25];
+  const all = [...new Set([chosen, ...FALLBACK_MODELS])];
+  const usable = all.filter((m) => !isExhausted(m));
+  const order = usable.length ? usable : all; // skip models whose free allowance is used up today
+  const WAITS = [0, 6, 15, 30];
   const skipped = new Set();
   const failures = [];
   let lastError = null;
@@ -570,19 +586,24 @@ async function resilientCall(job, onStatus, signal, label) {
         failures.push(`${MODELS[model] || model}: error ${e.status}, ${String(e.message).slice(0, 140)}`);
         if (![404, 429, 500, 503, 504].includes(e.status)) throw new AppError(friendlyGemini(e));
         if (e.status === 404) skipped.add(model);
+        if (e.status === 429 && /quota|exceeded/i.test(e.message)) { markExhausted(model); skipped.add(model); }
       }
     }
+    if (order.every((m) => skipped.has(m))) break;
   }
   const unique = [...new Set(failures)];
   S.lastFailure = `${new Date().toLocaleString()} (${label})\n${unique.join("\n")}`;
-  throw new AppError(`Every free model failed while ${label.toLowerCase()}. Here's what Google said:\n${unique.map((a) => "• " + a).join("\n")}\n\nThis is Google's free tier being overloaded. Try again in a few minutes.`);
+  const allQuota = order.every((m) => isExhausted(m));
+  throw new AppError(`Every free model failed while ${label.toLowerCase()}. Here's what Google said:\n${unique.map((a) => "• " + a).join("\n")}\n\n${allQuota
+    ? "You've used today's free Gemini allowance on every model. It resets overnight (around midnight Pacific time)."
+    : "Google's free tier is overloaded right now. Try again in a few minutes."}`);
 }
 
-async function writeStory(article, interests, angle, onStatus, signal) {
+async function writeStory(article, interests, angle, onStatus, signal, saved = null, save = () => {}) {
   const style = storyStyle(interests, angle);
   const excerpt = storyExcerpt(article.text);
   const source = `Article title: ${article.title}\n\n<article>\n${excerpt}\n</article>`;
-  const usedModels = new Set();
+  const usedModels = new Set(saved?.models || []);
   const chosenFailures = new Set();
   const track = (r) => {
     usedModels.add(r.model);
@@ -590,11 +611,13 @@ async function writeStory(article, interests, angle, onStatus, signal) {
     return r.out;
   };
 
-  // 1. Plan: title, teaser, introduction, section outline and takeaway (short output).
-  const plan = track(await resilientCall({
+  // 1. Plan: title, teaser, introduction, section outline and takeaway (short output). Skipped when resuming.
+  const plan = saved?.plan || track(await resilientCall({
     system: style + "\n\nFirst, plan the story. Write the title, teaser, introduction and takeaway in full, and outline 4 to 6 sections in story order.",
     prompt: source, schema: PLAN_SCHEMA, hint: PLAN_HINT,
   }, onStatus, signal, "Planning the story"));
+  const progress = { plan, sections: saved?.sections ? [...saved.sections] : [], done: saved?.done || 0, models: [...usedModels] };
+  save(progress);
   const outline = (plan.sections || []).filter((x) => x && x.heading).slice(0, 6);
   if (outline.length < 2) throw new AppError("Gemini's plan came back too thin. Give it another try.");
 
@@ -602,9 +625,9 @@ async function writeStory(article, interests, angle, onStatus, signal) {
   const introWords = words((plan.introduction || []).join(" ")) + words(plan.takeaway || "");
   const perSection = Math.max(220, Math.min(420, Math.round((WORDS.target - introWords) / outline.length)));
   const outlineText = outline.map((x, i) => `${i + 1}. ${x.heading}: ${x.covers}`).join("\n");
-  const sections = [];
-  let previous = (plan.introduction || []).slice(-1)[0] || "";
-  for (let i = 0; i < outline.length; i++) {
+  const sections = progress.sections;
+  let previous = sections.length ? sections[sections.length - 1].paragraphs.slice(-1)[0] : (plan.introduction || []).slice(-1)[0] || "";
+  for (let i = progress.done; i < outline.length; i++) {
     const sec = outline[i];
     const out = track(await resilientCall({
       system: style + `\n\nYou are writing one section of a longer story. Write only this section, in 2 to 5 paragraphs of 2 to 5 sentences each, about ${perSection} words. Continue smoothly from where the story left off. Don't repeat the introduction or earlier sections, don't add a heading, and don't wrap up the whole story unless this is the last section.`,
@@ -613,11 +636,14 @@ async function writeStory(article, interests, angle, onStatus, signal) {
     }, onStatus, signal, `Writing part ${i + 1} of ${outline.length}`));
     const paragraphs = (out.paragraphs || []).map((p) => String(p).trim()).filter(Boolean);
     if (paragraphs.length) { sections.push({ heading: sec.heading, paragraphs }); previous = paragraphs[paragraphs.length - 1]; }
+    progress.done = i + 1;
+    progress.models = [...usedModels];
+    save(progress); // a later failure can pick up from here
   }
 
   const backups = [...usedModels].filter((m) => m !== S.model);
   const note = backups.length
-    ? `${MODELS[S.model] || S.model} was busy for part of this, so ${backups.map((m) => MODELS[m] || m).join(" and ")} helped write it.${chosenFailures.size ? ` (${[...chosenFailures][0]})` : ""}`
+    ? `${MODELS[S.model] || S.model} ${isExhausted(S.model) ? "had used today's free allowance" : "was busy"} for part of this, so ${backups.map((m) => MODELS[m] || m).join(" and ")} helped write it.`
     : "";
   if (backups.length && chosenFailures.size) S.lastModelIssue = `${new Date().toLocaleString()}: ${[...chosenFailures][0]}`;
   else if (!backups.length) S.lastModelIssue = "";
@@ -637,12 +663,14 @@ document.addEventListener("visibilitychange", () => { if (job && document.hidden
 
 function setStatus(text) { if (job) { job.status = text; renderJobSlots(); } }
 
-async function startRead({ title = null, surprise = false } = {}) {
+async function startRead({ title = null, surprise = false, resume = false } = {}) {
   if (job) return;
   if (!S.key) { location.hash = "#settings"; return; }
   const controller = new AbortController();
   const { signal } = controller;
-  job = { status: title ? `Opening “${title}”…` : "Getting started…", controller };
+  const pending = resume ? S.pending : null;
+  if (resume && !pending) return;
+  job = { status: pending ? "Picking up where it left off…" : title ? `Opening “${title}”…` : "Getting started…", controller };
   jobError = "";
   wasHidden = false;
   renderJobSlots();
@@ -652,15 +680,24 @@ async function startRead({ title = null, surprise = false } = {}) {
   try {
     const selected = surprise ? [] : S.selected;
     const seen = new Set(reads.map((r) => r.articleTitle));
-    let article, angle = "", connects = [];
-    if (title) {
+    let article, angle = "", connects = [], interests;
+    if (pending) {
+      ({ article, angle, connects, interests } = pending);
+    } else if (title) {
       article = await fetchArticle(title, signal);
       if (!article) throw new AppError("Couldn't open that article. Try another one.");
+      interests = S.selected;
     } else {
       ({ article, angle, connects } = await findArticle(selected, seen, setStatus, signal));
+      interests = selected;
     }
-    setStatus(`Planning the story of “${article.title}”…`);
-    const { draft, model, note } = await writeStory(article, title ? S.selected : selected, angle, setStatus, signal);
+    // Remember the work so far, so a failure partway through can be finished later.
+    const base = { article: { title: article.title, url: article.url, image: article.image, description: article.description, text: storyExcerpt(article.text) },
+                   angle, connects, interests };
+    const saveProgress = (state) => { S.pending = { ...base, ...state }; renderPendingNote(); };
+    if (!pending) setStatus(`Planning the story of “${article.title}”…`);
+    const { draft, model, note } = await writeStory(article, interests, angle, setStatus, signal, pending, saveProgress);
+    S.pending = null;
     seen.add(article.title);
     const related = await relatedTitles(article.title, seen, signal).catch(() => []);
     const tidy = (s) => String(s || "").replace(/\*\*/g, "").replace(/^#+\s*/, "").trim();
@@ -694,7 +731,10 @@ async function startRead({ title = null, surprise = false } = {}) {
     render();
   } catch (e) {
     job = null;
-    if (e.name !== "AbortError") jobError = e instanceof AppError ? e.message : `Something went wrong: ${e.message}`;
+    if (e.name !== "AbortError") {
+      jobError = e instanceof AppError ? e.message : `Something went wrong: ${e.message}`;
+      if (S.pending?.plan) jobError += "\n\nThe parts written so far are saved. Tap Finish writing to pick up from here.";
+    }
     renderJobSlots();
   } finally {
     try { await lock?.release(); } catch {}
@@ -715,7 +755,14 @@ function jobSlotHTML(context) {
   const err = jobError ? `<div class="error" role="alert">${esc(jobError)}</div>` : "";
   if (context === "home") {
     const n = S.selected.length;
-    return `<div class="stack">
+    const p = S.pending;
+    const parts = p?.plan?.sections?.length ? Math.min(6, p.plan.sections.length) : 0;
+    const resumeCard = p?.plan ? `<div class="notice" style="margin-bottom:12px">
+        <strong>Story in progress</strong>
+        <p style="margin:4px 0 10px">“${esc(p.plan.title || p.article.title)}”: ${p.done || 0} of ${parts} parts written.</p>
+        <div class="row2"><button class="btn btn-primary" data-action="resume">Finish writing</button>
+        <button class="btn btn-line" data-action="discard">Discard</button></div></div>` : "";
+    return `${resumeCard}<div class="stack">
       <button class="btn btn-primary" data-action="find">${ICONS.dice} Find me a rabbit hole</button>
       <button class="btn btn-soft" data-action="surprise">${ICONS.spark} Surprise me (any topic)</button>
     </div>
@@ -723,6 +770,7 @@ function jobSlotHTML(context) {
   }
   return err;
 }
+function renderPendingNote() { /* the home card re-reads S.pending whenever job slots render */ }
 function renderJobSlots() {
   document.querySelectorAll("[data-job]").forEach((el) => { el.innerHTML = jobSlotHTML(el.dataset.job); });
   document.querySelectorAll("[data-deeper]").forEach((b) => { b.disabled = !!job; });
@@ -878,6 +926,7 @@ function settingsView() {
       </form>
       <p class="small muted">This model writes the stories, in small pieces so Google's free tier accepts them. Whenever it's busy or out of free uses for the day, rabbithole switches to Flash-Lite for that piece, and only waits if every model is busy. (Flash-Lite always does the quick job of choosing the article.)</p>
       ${S.lastModelIssue ? `<p class="small" style="color:var(--bad)">Last problem: ${esc(S.lastModelIssue)}</p>` : ""}
+      ${Object.keys(MODELS).filter(isExhausted).map((m) => `<p class="small muted">${esc(MODELS[m])} has used today's free allowance. rabbithole skips it until about ${new Date(S.exhausted[m]).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.</p>`).join("")}
       <button class="btn btn-line" style="margin-top:12px" data-action="check-models">Check models</button>
       <p class="small muted">Sends a tiny request and a short practice story to each free model and shows exactly what Google answers.</p>
       <div id="check-result"></div>
@@ -1048,6 +1097,8 @@ document.addEventListener("click", async (e) => {
   if (!el) return;
   switch (el.dataset.action) {
     case "find": startRead(); break;
+    case "resume": startRead({ resume: true }); break;
+    case "discard": S.pending = null; jobError = ""; renderJobSlots(); break;
     case "surprise": startRead({ surprise: true }); break;
     case "deeper": startRead({ title: el.dataset.title }); break;
     case "cancel": job?.controller.abort(); break;
