@@ -3,29 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#f6f1ea" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#16120f" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Rabbit Hole">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="rabbithole">
 <meta name="description" content="True stories from Wikipedia, found where your interests overlap.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" href="icon-192.png">
-<title>Rabbit Hole</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;800&display=swap">
+<title>rabbithole</title>
 <style>
   :root {
-    color-scheme: light dark;
-    --bg: #f6f1ea; --card: #fffdf9; --ink: #1f1a15; --muted: #6f665b; --line: #e7ddcf;
-    --accent: #d4531f; --accent-ink: #fff; --accent-soft: #fbe6da; --ok: #237a48; --bad: #b8322a;
-    --hole: #2a1d14;
+    /* Seafoam: black background, dark grey sections, white text, soft greenish-blue highlights. */
+    color-scheme: dark;
+    --bg: #000000; --card: #222222; --ink: #ffffff; --muted: #a8a8a8; --line: #3d3d3d;
+    --accent: #b5e0d6; --accent-ink: #14231f; --accent-soft: #2a3533; --ok: #a8e0b8; --bad: #f0a8a8;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --serif: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #16120f; --card: #201b17; --ink: #f3ede5; --muted: #a99f93; --line: #382f27;
-            --accent: #ee7a45; --accent-ink: #1b0f08; --accent-soft: #3a2418; --hole: #0d0906; }
   }
   * { box-sizing: border-box; min-width: 0; }
   html { -webkit-text-size-adjust: 100%; }
@@ -63,8 +61,14 @@
 
   .hero { position: relative; overflow: hidden; }
   .hero-art { position: absolute; right: 14px; top: 12px; width: 96px; height: 129px; pointer-events: none; }
-  .hero h2 { font-size: 24px; max-width: 70%; }
-  .hero p { max-width: 75%; margin: 6px 0 16px; }
+  .hero h2 { font-size: 24px; }
+  .hero p { margin: 6px 0 16px; }
+  .brand { position: relative; display: flex; flex-direction: column; align-items: center; padding: 6px 0 18px; }
+  .brand-img { height: 116px; width: auto; display: block; }
+  .wordmark { font: 400 40px/1 "Montserrat", var(--sans); letter-spacing: -.5px; margin-top: 8px; color: var(--ink); }
+  .wordmark b { font-weight: 800; }
+  .brand-settings { position: absolute; right: -6px; top: 0; }
+  .brand-img { filter: invert(1); } /* logo art is black lines; show it white */
 
   .job { display: flex; align-items: center; gap: 12px; padding: 4px 0 12px; }
   .spinner { width: 22px; height: 22px; border-radius: 50%; border: 3px solid var(--accent-soft); border-top-color: var(--accent);
@@ -135,7 +139,7 @@
 'use strict';
 {
 // =====================================================================
-// Rabbit Hole: finds Wikipedia articles where your interests overlap and
+// rabbithole: finds Wikipedia articles where your interests overlap and
 // turns them into 5–10 minute stories, written by Gemini.
 // Everything runs in the browser. Wikipedia and Gemini are called directly.
 // Reads live in IndexedDB; settings (including your key) in localStorage.
@@ -155,10 +159,10 @@ const CATEGORIES = [
 const DEFAULT_SELECTED = ["Healthcare", "Medicine", "Biology", "Technology", "Science"];
 const MODELS = {
   "gemini-3.8-flash": "Gemini 3.8 Flash (best writing)",
-  "gemini-3.6-flash": "Gemini 3.6 Flash",
   "gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite (fastest)",
+  "gemini-3.1-flash-lite": "Gemini 3.1 Flash-Lite (backup)",
 };
-const FALLBACK_MODEL = "gemini-3.5-flash-lite";
+const FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]; // all on Gemini's free tier
 const PICKER_MODEL = "gemini-3.5-flash-lite"; // choosing the article is a small job; saves Flash quota for writing
 const WORDS = { min: 1200, target: 1800, max: 2400 }; // 5–10 minutes at ~240 words a minute
 const WIKI = "https://en.wikipedia.org/w/api.php";
@@ -190,31 +194,7 @@ const ICONS = {
   book: '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg>',
 };
 // The logo (bent rabbit ears coming out of a hole in a globe), without its orange tile.
-const LOGO_ART = `<svg class="hero-art" viewBox="90 30 332 445" aria-hidden="true">
-  <defs><clipPath id="g"><circle cx="256" cy="318" r="168"/></clipPath></defs>
-  <g transform="translate(256 286) scale(0.88) translate(-256 -286)">
-    <circle cx="256" cy="318" r="168" fill="var(--card)"/>
-    <g clip-path="url(#g)" fill="none" stroke="var(--ink)" stroke-width="7">
-      <ellipse cx="256" cy="318" rx="168" ry="56"/>
-      <ellipse cx="256" cy="210" rx="150" ry="40"/>
-      <ellipse cx="256" cy="430" rx="150" ry="40"/>
-      <ellipse cx="256" cy="318" rx="60" ry="168"/>
-      <ellipse cx="256" cy="318" rx="118" ry="168"/>
-      <line x1="256" y1="150" x2="256" y2="486"/>
-    </g>
-    <circle cx="256" cy="318" r="168" fill="none" stroke="var(--ink)" stroke-width="11"/>
-    <path d="M228 70 L284 70 L272 205 L240 205 Z" fill="var(--card)"/>
-    <ellipse cx="256" cy="215" rx="84" ry="27" fill="var(--card)" stroke="var(--ink)" stroke-width="8"/>
-    <ellipse cx="256" cy="217" rx="68" ry="20" fill="var(--ink)"/>
-    <g transform="translate(256 222) scale(1.25) translate(-256 -222)">
-      <path d="M214 222 C204 170 192 118 200 78 C206 46 240 44 244 76 C248 116 246 170 250 222 Z" fill="var(--card)" stroke="var(--ink)" stroke-width="6.4" stroke-linejoin="round"/>
-      <path d="M222 196 C216 158 210 122 215 94 C218 78 230 78 232 94 C234 124 233 160 235 196" fill="none" stroke="var(--ink)" stroke-width="4" stroke-linecap="round"/>
-      <path d="M262 222 C264 176 268 132 280 104 C292 76 322 62 352 70 C380 78 384 106 360 114 C340 120 318 112 306 126 C296 140 296 180 300 222 Z" fill="var(--card)" stroke="var(--ink)" stroke-width="6.4" stroke-linejoin="round"/>
-      <path d="M274 196 C276 164 280 134 290 115 C300 96 320 88 340 92" fill="none" stroke="var(--ink)" stroke-width="4" stroke-linecap="round"/>
-    </g>
-    <path d="M188 217 A68 20 0 0 0 324 217 Z" fill="var(--ink)"/>
-  </g>
-</svg>`;
+// (The logo is the image file logo-mark.png; the name is live text.)
 
 // ---------- Settings (localStorage) ----------
 const store = {
@@ -395,7 +375,7 @@ function readInstructions(interests, angle) {
   const interestLine = interests.length
     ? `The reader is into: ${interests.join(", ")}. Where the article supports it, draw out how this story connects those fields.`
     : "The reader is curious about everything.";
-  return `You write for Rabbit Hole, an app that turns Wikipedia articles into gripping true stories for curious people. Write like a great magazine storyteller who is also a smart, warm friend: vivid, clear, a little playful, never stuffy. Explain jargon in plain words.
+  return `You write for rabbithole, an app that turns Wikipedia articles into gripping true stories for curious people. Write like a great magazine storyteller who is also a smart, warm friend: vivid, clear, a little playful, never stuffy. Explain jargon in plain words.
 
 Turn the topic into a story, not a summary. Don't describe what the thing is or does; find the narrative behind it. Ask: why did this come to exist? What problem, crisis, accident, rivalry or bold idea started it? Who were the people, what did they risk, what went wrong, what was the turning point, and what did it change? For example, the Wikipedia article on the FDA is a dry description of an agency, but the story of how deadly patent medicines and a poisoning scandal forced its creation is gripping. If the article has little history, build the story around whatever tension, mystery or stakes it does contain.
 
@@ -430,7 +410,7 @@ async function geminiCall(model, { system, prompt, schema, hint }, signal, useSc
   } catch (e) {
     if (e.name === "AbortError") throw e;
     throw new AppError(document.hidden || wasHidden
-      ? "Rabbit Hole was interrupted when you switched apps. Keep it open while it writes, then try again."
+      ? "rabbithole was interrupted when you switched apps. Keep it open while it writes, then try again."
       : "Couldn't reach Google. Check your internet connection and try again.");
   }
   const data = await res.json().catch(() => ({}));
@@ -455,6 +435,8 @@ function friendlyGemini(e) {
     return "Google didn't accept your API key. Check it in Settings (copy the whole key again).";
   if (e.status === 429) return "You've hit Gemini's free limit for the moment. Wait a minute (or until tomorrow) and try again.";
   if (e.status === 404) return `Google doesn't recognise that model (${m}). Pick a different model in Settings.`;
+  if ([500, 503, 504].includes(e.status))
+    return "Google's AI servers are overloaded right now. rabbithole tried several times and every free model was busy. This usually passes within a few minutes, so try again shortly.";
   return `Gemini had a problem (error ${e.status}): ${m}`;
 }
 
@@ -462,7 +444,7 @@ function friendlyGemini(e) {
 async function pickStory(pool, selected, signal) {
   const list = pool.map((c, i) => `${i + 1}. ${c.title} | matched: ${c.labels.join(", ") || "none"} | ${c.snippet}`).join("\n");
   const job = {
-    system: "You choose the next article for a curious reader of Rabbit Hole, an app that turns Wikipedia articles into true stories.",
+    system: "You choose the next article for a curious reader of rabbithole, an app that turns Wikipedia articles into true stories.",
     prompt: `${selected.length ? `The reader's interests: ${selected.join(", ")}.` : "The reader is curious about everything."}
 
 Pick the ONE candidate that:
@@ -474,7 +456,7 @@ ${list}`,
     schema: PICK_SCHEMA,
     hint: PICK_HINT,
   };
-  for (const model of [PICKER_MODEL, S.model]) {
+  for (const model of [...new Set([PICKER_MODEL, ...FALLBACK_MODELS, S.model])]) {
     try {
       const out = await geminiCall(model, job, signal);
       const c = pool[Number(out.number) - 1];
@@ -504,22 +486,30 @@ async function findArticle(selected, seen, onStatus, signal) {
   throw new AppError("Couldn't find a good article this time. Try again.");
 }
 
-// Writes the story. Retries the chosen model once if it's busy, then falls back to Flash-Lite,
-// remembering why so it can be shown in the read and in Settings.
+// Writes the story. If Google is busy, waits and retries each model, then moves down the list of
+// free fallback models, remembering why so it can be shown in the read and in Settings.
 async function writeStory(article, interests, angle, onStatus, signal) {
   const job = { system: readInstructions(interests, angle),
                 prompt: `Article title: ${article.title}\n\n<article>\n${article.text}\n</article>`,
                 schema: READ_SCHEMA, hint: READ_HINT };
   const chosen = S.model;
-  const order = chosen === FALLBACK_MODEL ? [chosen] : [chosen, FALLBACK_MODEL];
+  const order = [...new Set([chosen, ...FALLBACK_MODELS])];
+  const WAITS = [6, 15]; // seconds to wait before the 2nd and 3rd try of the same model
   let note = "";
+  let lastError = null;
 
   for (let i = 0; i < order.length; i++) {
     const model = order[i];
-    const tries = i === 0 && order.length > 1 ? 2 : 1;
-    for (let t = 0; t < tries; t++) {
+    const name = MODELS[model] || model;
+    for (let t = 0; t <= WAITS.length; t++) {
       try {
-        if (t > 0) { onStatus("Gemini was busy, trying again…"); await sleep(4000, signal); }
+        if (t > 0) {
+          for (let left = WAITS[t - 1]; left > 0; left--) {
+            onStatus(`Google is busy. Trying ${name} again in ${left} s…`);
+            await sleep(1000, signal);
+          }
+          onStatus(`Writing the story of “${article.title}”…`);
+        }
         let draft = await geminiCall(model, job, signal);
         const n = draftWords(draft);
         if (n < WORDS.min || n > WORDS.max) {
@@ -533,19 +523,26 @@ async function writeStory(article, interests, angle, onStatus, signal) {
         return { draft, model, note };
       } catch (e) {
         if (e.name === "AbortError" || !(e instanceof GeminiError)) throw e;
-        const retryable = [429, 500, 503, 504].includes(e.status);
-        if (retryable && t < tries - 1) continue;
-        if ((retryable || e.status === 404) && i < order.length - 1) {
-          note = `${MODELS[model] || model} wasn't available (${e.status}: ${e.message}), so ${MODELS[order[i + 1]] || order[i + 1]} wrote this one.`;
-          S.lastModelIssue = `${new Date().toLocaleString()}: ${model} → error ${e.status}: ${e.message}`;
-          onStatus("Switching to Flash-Lite…");
+        lastError = e;
+        const busy = [500, 503, 504].includes(e.status);
+        const limited = e.status === 429;
+        // Busy: retry the same model after a pause. Rate-limited: one retry. Missing model: move on.
+        if (busy && t < WAITS.length) continue;
+        if (limited && t < 1) continue;
+        if ((busy || limited || e.status === 404) && i < order.length - 1) {
+          const next = MODELS[order[i + 1]] || order[i + 1];
+          if (model === chosen) {
+            note = `${name} wasn't available (${e.status}: ${e.message}), so a backup model wrote this one.`;
+            S.lastModelIssue = `${new Date().toLocaleString()}: ${model} → error ${e.status}: ${e.message}`;
+          }
+          onStatus(`${name} is busy. Switching to ${next}…`);
           break;
         }
         throw new AppError(friendlyGemini(e));
       }
     }
   }
-  throw new AppError("Gemini couldn't write a story right now. Try again in a minute.");
+  throw new AppError(lastError ? friendlyGemini(lastError) : "Gemini couldn't write a story right now. Try again in a minute.");
 }
 
 function draftWords(d) {
@@ -654,7 +651,11 @@ function renderJobSlots() {
 function interestsCard() {
   const selected = new Set(S.selected);
   const custom = new Set(S.custom);
-  const chips = allInterests().map((label) => {
+  // Selected interests first, then the rest; each group in alphabetical order.
+  const abc = (x, y) => x.localeCompare(y, undefined, { sensitivity: "base" });
+  const ordered = [...allInterests().filter((l) => selected.has(l)).sort(abc),
+                   ...allInterests().filter((l) => !selected.has(l)).sort(abc)];
+  const chips = ordered.map((label) => {
     const on = selected.has(label);
     const toggle = `<button class="chip toggle" data-action="toggle-interest" data-label="${esc(label)}" aria-pressed="${on}">${esc(label)}</button>`;
     return custom.has(label)
@@ -679,7 +680,7 @@ function homeView() {
   const standalone = isStandalone();
   const install = !standalone && !S.installDismissed ? `
     <div class="card notice">
-      <strong>Add Rabbit Hole to your Home Screen</strong>
+      <strong>Add rabbithole to your Home Screen</strong>
       <p style="margin:6px 0 10px">In Chrome, tap the <b>Share</b> icon in the address bar, then <b>Add to Home Screen</b>. In Safari, tap <b>Share › Add to Home Screen</b>. Then open it from the icon. The installed app keeps its own storage, so add your key there.</p>
       <button class="linkbtn" data-action="dismiss-install">Got it</button>
     </div>` : "";
@@ -687,7 +688,7 @@ function homeView() {
   const setup = !hasKey ? `
     <section class="card">
       <h2>One-time setup</h2>
-      <p class="muted">Rabbit Hole uses Google's Gemini to write its stories. Its free tier needs no credit card. Get a free key, then paste it here.</p>
+      <p class="muted">rabbithole uses Google's Gemini to write its stories. Its free tier needs no credit card. Get a free key, then paste it here.</p>
       <div class="stack">
         <a class="btn btn-soft" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get a free key from Google AI Studio</a>
         <form data-form="key" class="inline">
@@ -701,7 +702,6 @@ function homeView() {
 
   const generate = hasKey ? `
     <section class="card hero">
-      ${LOGO_ART}
       <h2>Today's rabbit hole</h2>
       <p class="muted">A true story from Wikipedia, found where your interests meet, in a 5 to 10 minute read.</p>
       <div data-job="home">${jobSlotHTML("home")}</div>
@@ -719,10 +719,11 @@ function homeView() {
     : `<div class="empty">Nothing here yet. Tap the button above to fall into your first rabbit hole.</div>`;
 
   return `
-    <header class="topbar">
-      <img class="logo" src="icon-192.png" alt="">
-      <h1>Rabbit Hole</h1>
-      <button class="iconbtn" data-action="go-settings" aria-label="Settings">${ICONS.gear}</button>
+    <header class="brand">
+      <h1 class="sr">rabbithole</h1>
+      <img class="brand-img" src="logo-mark.png" alt="">
+      <div class="wordmark" aria-hidden="true"><b>rabbit</b>hole</div>
+      <button class="iconbtn brand-settings" data-action="go-settings" aria-label="Settings">${ICONS.gear}</button>
     </header>
     ${install}${setup}${generate}
     ${interestsCard()}
@@ -792,10 +793,10 @@ function settingsView() {
       <label class="sr" for="model">Model</label>
       <select id="model" data-change="model">${modelOptions}</select>
       <form data-form="custom-model" class="inline" style="margin-top:10px;${MODELS[model] ? "display:none" : ""}" id="custom-model-form">
-        <input name="model" type="text" value="${MODELS[model] ? "" : esc(model)}" placeholder="e.g. gemini-3.6-flash" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <input name="model" type="text" value="${MODELS[model] ? "" : esc(model)}" placeholder="e.g. gemini-3.8-flash" autocomplete="off" autocapitalize="off" spellcheck="false">
         <button class="btn btn-primary" type="submit">Use</button>
       </form>
-      <p class="small muted">This model writes the stories. If it's busy or unavailable, Rabbit Hole retries once, then uses Gemini 3.5 Flash-Lite. (Flash-Lite always does the quick job of choosing the article.)</p>
+      <p class="small muted">This model writes the stories. If Google is busy, rabbithole waits and retries, then switches to Flash-Lite and finally a backup model, all free. (Flash-Lite always does the quick job of choosing the article.)</p>
       ${S.lastModelIssue ? `<p class="small" style="color:var(--bad)">Last problem: ${esc(S.lastModelIssue)}</p>` : ""}
     </section>
 
@@ -810,7 +811,7 @@ function settingsView() {
       <p class="small muted" id="storage-status"></p>
     </section>
 
-    <p class="small muted" style="text-align:center">Rabbit Hole · Articles from Wikipedia (CC BY-SA 4.0) · Stories by Google Gemini</p>`;
+    <p class="small muted" style="text-align:center">rabbithole · Articles from Wikipedia (CC BY-SA 4.0) · Stories by Google Gemini</p>`;
 }
 
 function render() {
@@ -850,9 +851,9 @@ async function showStorageStatus() {
   if (!el || !navigator.storage?.persisted) return;
   const persisted = await navigator.storage.persisted().catch(() => false);
   el.textContent = persisted
-    ? "This phone has agreed to keep Rabbit Hole's data permanently."
+    ? "This phone has agreed to keep rabbithole's data permanently."
     : isStandalone() ? "This phone hasn't promised permanent storage yet. Backups are a good idea."
-                     : "Open Rabbit Hole from your Home Screen for the most reliable storage.";
+                     : "Open rabbithole from your Home Screen for the most reliable storage.";
 }
 
 // ---------- Actions ----------
@@ -871,7 +872,7 @@ async function exportBackup() {
   const name = `rabbit-hole-backup-${new Date().toISOString().slice(0, 10)}.json`;
   const file = new File([data], name, { type: "application/json" });
   try {
-    if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: "Rabbit Hole backup" }); return; }
+    if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: "rabbithole backup" }); return; }
   } catch (e) { if (e.name === "AbortError") return; }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(file);
@@ -884,7 +885,7 @@ async function exportBackup() {
 async function importBackup(file) {
   try {
     const data = JSON.parse(await file.text());
-    if (data.app !== "rabbit-hole" || !Array.isArray(data.reads)) throw new Error("not a Rabbit Hole backup");
+    if (data.app !== "rabbit-hole" || !Array.isArray(data.reads)) throw new Error("not a rabbithole backup");
     let added = 0;
     for (const r of data.reads) {
       if (!r || !r.id || !Array.isArray(r.sections)) continue;

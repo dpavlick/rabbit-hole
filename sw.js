@@ -1,10 +1,10 @@
-// Rabbit Hole offline helper.
+// rabbithole offline helper.
 // - The app's own files: network first (so updates show up right away), cached copy when offline.
 // - Wikipedia article images: cached after first view, so saved reads keep their pictures offline.
 // - Calls to Wikipedia's API and to Gemini are never touched.
-const APP_CACHE = "rh-app-v4";
+const APP_CACHE = "rh-app-v9";
 const IMAGE_CACHE = "rh-images";
-const APP_FILES = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
+const APP_FILES = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png", "./logo-mark.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(APP_CACHE).then((cache) => cache.addAll(APP_FILES)).then(() => self.skipWaiting()));
