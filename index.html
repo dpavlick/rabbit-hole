@@ -88,6 +88,17 @@
   .chip-group .chip.toggle { border-top-right-radius: 0; border-bottom-right-radius: 0; }
   .chip-x { border: 1px solid var(--line); border-left: 0; background: transparent; color: var(--muted); border-radius: 0 999px 999px 0;
             padding: 0 12px; font-size: 18px; min-height: 38px; }
+  .choices { display: grid; gap: 10px; }
+  .choice { display: flex; gap: 12px; align-items: flex-start; text-align: left; width: 100%; padding: 10px; border-radius: 14px;
+            border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+  .choice:active { border-color: var(--accent); }
+  .choice-img { width: 72px; height: 72px; border-radius: 10px; object-fit: cover; flex: none; background: var(--accent-soft); }
+  .choice-img.blank { display: grid; place-items: center; color: var(--accent); }
+  .choice-text { display: flex; flex-direction: column; gap: 4px; }
+  .choice-hook { font-weight: 700; line-height: 1.3; }
+  .choice-title { font-size: 13px; color: var(--muted); }
+  .choice-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .choice-tags span { background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 8px; }
   .connects { display: flex; flex-wrap: wrap; gap: 6px; margin: 18px 0 8px; }
   .connects span { background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 700; border-radius: 999px; padding: 4px 10px; }
 
@@ -231,6 +242,8 @@ const S = {
   set lastModelIssue(v) { store.set("lastModelIssue", v); },
   get lastFailure() { return store.get("lastFailure", ""); },
   set lastFailure(v) { store.set("lastFailure", v); },
+  get choices() { return store.get("choices", null); },          // the three topic options on screen
+  set choices(v) { store.set("choices", v); },
   get pending() { return store.get("pending", null); },          // a story that's partly written
   set pending(v) { store.set("pending", v); },
   get exhausted() { return store.get("exhausted", {}); },        // model → time its daily free allowance resets
@@ -386,13 +399,24 @@ const READ_HINT = "Reply with only a JSON object with keys: title, teaser, intro
 const PICK_SCHEMA = {
   type: "object",
   properties: {
-    number: { type: "integer", description: "The number of the chosen candidate." },
-    connects: { type: "array", items: { type: "string" }, description: "Which of the reader's interests this story genuinely relates to (one or more)." },
-    storyAngle: { type: "string", description: "One sentence: the story to tell, e.g. how or why it came to be." },
+    options: {
+      type: "array",
+      description: "Exactly three choices, each on a clearly different theme.",
+      items: {
+        type: "object",
+        properties: {
+          number: { type: "integer", description: "The number of the chosen candidate." },
+          hook: { type: "string", description: "Under 14 words: an intriguing teaser for the story, based only on the title and snippet. No invented facts." },
+          connects: { type: "array", items: { type: "string" }, description: "Which of the reader's interests this story relates to (one or more)." },
+          storyAngle: { type: "string", description: "One sentence: the story to tell, e.g. how or why it came to be." },
+        },
+        required: ["number", "hook", "connects", "storyAngle"],
+      },
+    },
   },
-  required: ["number", "connects", "storyAngle"],
+  required: ["options"],
 };
-const PICK_HINT = "Reply with only a JSON object with keys: number (integer), connects (array of strings), storyAngle (string).";
+const PICK_HINT = "Reply with only a JSON object: {\"options\": [{\"number\": 1, \"hook\": \"...\", \"connects\": [\"...\"], \"storyAngle\": \"...\"}, ...]} with exactly three options.";
 
 function readInstructions(interests, angle) {
   const interestLine = interests.length
@@ -465,55 +489,85 @@ function friendlyGemini(e) {
   return `Gemini had a problem (error ${e.status}): ${m}`;
 }
 
-// Asks Gemini to choose the candidate that spans the most interests and has the best story.
-async function pickStory(pool, selected, signal) {
+// Asks Gemini for the three candidates with the best stories, on different themes.
+async function pickOptions(pool, selected, signal) {
   const list = pool.map((c, i) => `${i + 1}. ${c.title} | found via: ${c.labels.join(", ") || "anything"} | ${c.snippet}`).join("\n");
   const recent = reads.slice(0, 10).map((r) => r.articleTitle);
   const job = {
-    system: "You choose the next article for a curious reader of rabbithole, an app that turns Wikipedia articles into true stories.",
+    system: "You suggest the next articles for a curious reader of rabbithole, an app that turns Wikipedia articles into true stories.",
     prompt: `${selected.length ? `The reader's interests: ${selected.join(", ")}.` : "The reader is curious about everything."}
 
-Pick the ONE candidate with the most fascinating true story behind it that is clearly related to at least one of the reader's interests. Think of the kind of thing a curious person would love to discover by accident: how penicillin was discovered, why the International Space Station cost so much, how the National Institutes of Health was formed.
+Pick the THREE candidates with the most fascinating true stories behind them, each clearly related to at least one of the reader's interests, and each on a clearly different theme from the other two. Think of the kind of thing a curious person would love to discover by accident: how penicillin was discovered, why the International Space Station cost so much, how the National Institutes of Health was formed.
 
 Prefer:
-- a specific thing with a story (a discovery, an invention, an institution's founding, a disaster, an expedition, a megaproject, a scandal, a person's breakthrough) over a broad field or overview topic (for example, "Penicillin" or "Elixir Sulfanilamide disaster" over "Genetic engineering" or "Biotechnology");
+- specific things with a story (a discovery, an invention, an institution's founding, a disaster, an expedition, a megaproject, a scandal, a person's breakthrough) over broad fields or overview topics (for example, "Penicillin" or "Elixir Sulfanilamide disaster" over "Genetic engineering" or "Biotechnology");
 - topics where "how or why did this come to be?" has a surprising answer;
-- variety: something different in subject and theme from the reader's recent reads.
+- variety: different in subject and theme from the reader's recent reads.
 Touching several of the reader's interests is a nice bonus, but never required.
 
-${recent.length ? `The reader's recent reads (choose something on a different theme): ${recent.join("; ")}\n\n` : ""}Candidates (title | interest it was found through | snippet):
+For each, write a short hook that would make the reader want to tap it, such as "How a moldy dish on a messy lab bench changed medicine". Base it only on the title and snippet, and don't invent facts.
+
+${recent.length ? `The reader's recent reads (avoid these themes): ${recent.join("; ")}\n\n` : ""}Candidates (title | interest it was found through | snippet):
 ${list}`,
     schema: PICK_SCHEMA,
     hint: PICK_HINT,
   };
   for (const model of [...new Set([PICKER_MODEL, ...FALLBACK_MODELS, S.model])]) {
+    if (isExhausted(model)) continue;
     try {
       const out = await geminiCall(model, job, signal);
-      const c = pool[Number(out.number) - 1];
-      if (c) return { candidate: c, connects: (out.connects || []).filter((x) => selected.includes(x)), angle: String(out.storyAngle || "") };
+      const used = new Set();
+      const picks = [];
+      for (const o of out.options || []) {
+        const c = pool[Number(o.number) - 1];
+        if (!c || used.has(c.title)) continue;
+        used.add(c.title);
+        picks.push({ candidate: c, hook: String(o.hook || "").trim(), angle: String(o.storyAngle || "").trim(),
+                     connects: (o.connects || []).filter((x) => selected.includes(x)) });
+      }
+      if (picks.length) return picks;
     } catch (e) {
       if (e.name === "AbortError") throw e;
+      if (e instanceof GeminiError && e.status === 429 && /quota|exceeded/i.test(e.message)) { markExhausted(model); continue; }
       if (e instanceof GeminiError && ![404, 429, 500, 503, 504].includes(e.status)) throw new AppError(friendlyGemini(e));
     }
   }
-  return null; // fall back to the candidates in random order
+  return []; // fall back to random candidates
 }
 
-async function findArticle(selected, seen, onStatus, signal) {
+// Looks up pictures and checks the articles are long enough, for up to six titles at once.
+async function articleInfo(titles, signal) {
+  const data = await wiki({ action: "query", prop: "pageimages|info|pageprops|description", titles: titles.join("|"),
+                            redirects: "1", piprop: "thumbnail", pithumbsize: "300", ppprop: "disambiguation" }, signal);
+  const map = new Map();
+  for (const p of data.query?.pages || []) map.set(p.title, p);
+  for (const r of data.query?.redirects || []) if (map.has(r.to)) map.set(r.from, map.get(r.to));
+  return map;
+}
+
+// Finds three topic options for you to choose from.
+async function findOptions(selected, seen, onStatus, signal) {
   onStatus(selected.length ? "Exploring Wikipedia around your interests…" : "Rummaging through Wikipedia's best articles…");
   const pool = await buildPool(selected, seen, signal);
   if (!pool.length) throw new AppError("Couldn't find articles for those interests. Try selecting different or broader ones.");
-  onStatus("Choosing the best story…");
-  const choice = await pickStory(pool, selected, signal);
-  const order = choice ? [choice.candidate, ...pool.filter((c) => c !== choice.candidate)] : pool;
-  for (const cand of order.slice(0, 5)) {
-    const article = await fetchArticle(cand.title, signal);
-    if (article && article.text.length > 6000) {
-      const chosen = choice && cand === choice.candidate;
-      return { article, angle: chosen ? choice.angle : "", connects: chosen && choice.connects.length ? choice.connects : cand.labels };
-    }
+  onStatus("Picking three stories for you…");
+  const picks = await pickOptions(pool, selected, signal);
+  // Backups from the pool in case a pick turns out to be too short.
+  const backups = pool.filter((c) => !picks.some((p) => p.candidate === c)).slice(0, 6)
+                      .map((c) => ({ candidate: c, hook: "", angle: "", connects: c.labels }));
+  const all = [...picks, ...backups];
+  const info = await articleInfo(all.map((x) => x.candidate.title).slice(0, 12), signal).catch(() => new Map());
+  const options = [];
+  for (const x of all) {
+    const page = info.get(x.candidate.title);
+    if (page && (page.missing || page.pageprops?.disambiguation !== undefined || (page.length || 0) < 12000)) continue;
+    options.push({ title: page?.title || x.candidate.title, hook: x.hook || x.candidate.snippet || "", angle: x.angle,
+                   connects: x.connects.length ? x.connects : x.candidate.labels, image: page?.thumbnail?.source || null,
+                   description: page?.description || "" });
+    if (options.length === 3) break;
   }
-  throw new AppError("Couldn't find a good article this time. Try again.");
+  if (!options.length) throw new AppError("Couldn't find good topics this time. Try again.");
+  return options;
 }
 
 // ---------- Writing the story in small pieces ----------
@@ -684,14 +738,39 @@ document.addEventListener("visibilitychange", () => { if (job && document.hidden
 
 function setStatus(text) { if (job) { job.status = text; renderJobSlots(); } }
 
-async function startRead({ title = null, surprise = false, resume = false } = {}) {
+// Step 1: find three options and show them. Nothing is written until you choose one.
+async function findChoices({ surprise = false, more = false } = {}) {
+  if (job) return;
+  if (!S.key) { location.hash = "#settings"; return; }
+  const controller = new AbortController();
+  job = { status: "Finding topics…", controller };
+  jobError = "";
+  const previous = more ? S.choices : null;
+  const isSurprise = previous ? previous.surprise : surprise;
+  renderJobSlots();
+  try {
+    const selected = isSurprise ? [] : S.selected;
+    const seen = new Set([...reads.map((r) => r.articleTitle), ...(previous?.shown || [])]);
+    const options = await findOptions(selected, seen, setStatus, controller.signal);
+    S.choices = { surprise: isSurprise, options, shown: [...(previous?.shown || []), ...options.map((o) => o.title)] };
+  } catch (e) {
+    if (e.name !== "AbortError") jobError = e instanceof AppError ? e.message : `Something went wrong: ${e.message}`;
+  }
+  job = null;
+  renderJobSlots();
+}
+
+// Step 2: write the story for the option you chose (or a "Go deeper" title, or a saved story).
+async function startRead({ title = null, choice = null, resume = false } = {}) {
   if (job) return;
   if (!S.key) { location.hash = "#settings"; return; }
   const controller = new AbortController();
   const { signal } = controller;
   const pending = resume ? S.pending : null;
   if (resume && !pending) return;
-  job = { status: pending ? "Picking up where it left off…" : title ? `Opening “${title}”…` : "Getting started…", controller };
+  const picked = choice !== null ? S.choices?.options?.[choice] : null;
+  if (choice !== null && !picked) return;
+  job = { status: pending ? "Picking up where it left off…" : `Opening “${picked ? picked.title : title}”…`, controller };
   jobError = "";
   wasHidden = false;
   renderJobSlots();
@@ -699,18 +778,19 @@ async function startRead({ title = null, surprise = false, resume = false } = {}
   try { lock = await navigator.wakeLock?.request("screen"); } catch {}
 
   try {
-    const selected = surprise ? [] : S.selected;
     const seen = new Set(reads.map((r) => r.articleTitle));
     let article, angle = "", connects = [], interests;
     if (pending) {
       ({ article, angle, connects, interests } = pending);
-    } else if (title) {
+    } else if (picked) {
+      article = await fetchArticle(picked.title, signal);
+      if (!article) throw new AppError("Couldn't open that article. Pick another one.");
+      angle = picked.angle; connects = picked.connects;
+      interests = S.choices.surprise ? [] : S.selected;
+    } else {
       article = await fetchArticle(title, signal);
       if (!article) throw new AppError("Couldn't open that article. Try another one.");
       interests = S.selected;
-    } else {
-      ({ article, angle, connects } = await findArticle(selected, seen, setStatus, signal));
-      interests = selected;
     }
     // Remember the work so far, so a failure partway through can be finished later.
     const base = { article: { title: article.title, url: article.url, image: article.image, description: article.description, text: storyExcerpt(article.text) },
@@ -719,6 +799,7 @@ async function startRead({ title = null, surprise = false, resume = false } = {}
     if (!pending) setStatus(`Planning the story of “${article.title}”…`);
     const { draft, model, note } = await writeStory(article, interests, angle, setStatus, signal, pending, saveProgress);
     S.pending = null;
+    if (picked) S.choices = null;
     seen.add(article.title);
     const related = await relatedTitles(article.title, seen, signal).catch(() => []);
     const tidy = (s) => String(s || "").replace(/\*\*/g, "").replace(/^#+\s*/, "").trim();
@@ -783,6 +864,23 @@ function jobSlotHTML(context) {
         <p style="margin:4px 0 10px">“${esc(p.plan.title || p.article.title)}”: ${p.done || 0} of ${parts} parts written.</p>
         <div class="row2"><button class="btn btn-primary" data-action="resume">Finish writing</button>
         <button class="btn btn-line" data-action="discard">Discard</button></div></div>` : "";
+    const c = S.choices;
+    if (c?.options?.length) {
+      return `${resumeCard}<p style="margin:0 0 10px;font-weight:600">Pick your rabbit hole</p>
+        <div class="choices">${c.options.map((o, i) => `
+          <button class="choice" data-action="choose" data-index="${i}">
+            ${o.image ? `<img class="choice-img" src="${esc(o.image)}" alt="" loading="lazy" onerror="this.removeAttribute('src')">` : `<div class="choice-img blank">${ICONS.book}</div>`}
+            <span class="choice-text">
+              <span class="choice-hook">${esc(o.hook || o.title)}</span>
+              <span class="choice-title">${esc(o.title)}</span>
+              ${o.connects?.length ? `<span class="choice-tags">${o.connects.map((t) => `<span>${esc(t)}</span>`).join("")}</span>` : ""}
+            </span>
+          </button>`).join("")}</div>
+        <div class="row2" style="margin-top:12px">
+          <button class="btn btn-soft" data-action="more-choices">${ICONS.dice} New options</button>
+          <button class="btn btn-line" data-action="cancel-choices">Cancel</button>
+        </div>${err}`;
+    }
     return `${resumeCard}<div class="stack">
       <button class="btn btn-primary" data-action="find">${ICONS.dice} Find me a rabbit hole</button>
       <button class="btn btn-soft" data-action="surprise">${ICONS.spark} Surprise me (any topic)</button>
@@ -859,7 +957,7 @@ function homeView() {
   const list = reads.length
     ? `<ul class="reads">${reads.map((r) => `
         <li><a class="read-item" href="#read/${esc(r.id)}">
-          ${r.imageURL ? `<img class="thumb" src="${esc(r.imageURL)}" alt="" loading="lazy">` : `<div class="thumb blank">${ICONS.book}</div>`}
+          ${r.imageURL ? `<img class="thumb" src="${esc(r.imageURL)}" alt="" loading="lazy" onerror="this.removeAttribute('src')">` : `<div class="thumb blank">${ICONS.book}</div>`}
           <div style="flex:1">
             <div class="t">${r.isRead ? "" : '<span class="dot" aria-label="Unread"></span>'}<span>${esc(r.title)}</span></div>
             <div class="s">${esc(r.articleTitle)} · ${minutesOf(r)} min · ${fmtDate(r.createdAt)}</div>
@@ -892,7 +990,7 @@ function readerView(r) {
   return `
     <button class="back" data-action="go-home">${ICONS.back} Rabbit holes</button>
     <article class="article">
-      ${r.imageURL ? `<img class="article-img" src="${esc(r.imageURL)}" alt="">` : ""}
+      ${r.imageURL ? `<img class="article-img" src="${esc(r.imageURL)}" alt="" onerror="this.remove()">` : ""}
       ${connects}
       <h1>${esc(r.title)}</h1>
       ${r.teaser ? `<p class="teaser">${esc(r.teaser)}</p>` : ""}
@@ -1117,10 +1215,13 @@ document.addEventListener("click", async (e) => {
   const el = e.target.closest("[data-action]");
   if (!el) return;
   switch (el.dataset.action) {
-    case "find": startRead(); break;
+    case "find": findChoices(); break;
+    case "more-choices": findChoices({ more: true }); break;
+    case "cancel-choices": S.choices = null; jobError = ""; renderJobSlots(); break;
+    case "choose": startRead({ choice: Number(el.dataset.index) }); break;
     case "resume": startRead({ resume: true }); break;
     case "discard": S.pending = null; jobError = ""; renderJobSlots(); break;
-    case "surprise": startRead({ surprise: true }); break;
+    case "surprise": findChoices({ surprise: true }); break;
     case "deeper": startRead({ title: el.dataset.title }); break;
     case "cancel": job?.controller.abort(); break;
     case "go-home": location.hash = ""; break;
